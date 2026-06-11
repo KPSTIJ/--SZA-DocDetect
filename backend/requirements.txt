@@ -1,0 +1,17 @@
+# Core dependencies (Python 3.11+)
+# Для ML-зависимостей (PaddleOCR, DocLayoutYOLO) используйте Python <=3.11:
+#   pip install -r requirements.ml.txt
+fastapi>=0.111
+uvicorn[standard]
+sqlalchemy>=2.0
+aiosqlite
+alembic
+pydantic-settings
+pydantic>=2
+pymupdf
+numpy
+Pillow
+httpx
+rapidfuzz
+python-multipart
+opencv-python-headless

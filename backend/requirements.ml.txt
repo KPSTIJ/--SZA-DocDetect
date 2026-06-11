@@ -1,0 +1,5 @@
+# ML dependencies — требуют Python <=3.11
+# Установка: pip install -r requirements.ml.txt
+paddleocr
+paddlepaddle
+doclayout-yolo
