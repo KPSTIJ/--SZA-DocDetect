@@ -1,7 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Upload, Button, List, Tag, message, Tooltip } from 'antd';
-import { InboxOutlined, PlayCircleOutlined } from '@ant-design/icons';
-import { Upload as UploadIcon } from '../Icons';
+import { InboxOutlined, PlayCircleOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
 
 const { Dragger } = Upload;
@@ -17,6 +16,7 @@ const statusColors = {
 const UploadSection = () => {
   const { jobs, loading, uploadFiles, startBatch, fetchJobs, startPolling, stopPolling } =
     useJobStore();
+  const dirInputRef = useRef(null);
 
   useEffect(() => {
     fetchJobs();
@@ -24,10 +24,28 @@ const UploadSection = () => {
     return () => stopPolling();
   }, [fetchJobs, startPolling, stopPolling]);
 
-    const handleUpload = async (file) => {
+  const handleUpload = async (file) => {
     await uploadFiles([file]);
     message.success(`"${file.name}" загружен`);
     return false;
+  };
+
+  const handleDirPick = async () => {
+    const files = dirInputRef.current?.files;
+    if (!files || files.length === 0) return;
+    const pdfs = [];
+    for (const f of files) {
+      if (f.name.toLowerCase().endsWith('.pdf')) {
+        pdfs.push(f);
+      }
+    }
+    if (pdfs.length === 0) {
+      message.warning('В выбранной папке нет PDF-файлов');
+      return;
+    }
+    await uploadFiles(pdfs);
+    message.success(`Загружено ${pdfs.length} PDF-файлов из папки`);
+    dirInputRef.current.value = '';
   };
 
   const handleBatch = async () => {
@@ -62,12 +80,32 @@ const UploadSection = () => {
         <p style={{ color: '#8a9a92', fontSize: 13 }}>Поддерживается загрузка нескольких файлов</p>
       </Dragger>
 
+      <input
+        ref={dirInputRef}
+        type="file"
+        webkitdirectory=""
+        directory=""
+        multiple
+        onChange={handleDirPick}
+        style={{ display: 'none' }}
+      />
+
+      <Button
+        icon={<FolderOpenOutlined />}
+        size="large"
+        block
+        style={{ marginTop: 8, borderRadius: 8, height: 44, borderColor: '#b8d4c6', color: '#1a6b4a' }}
+        onClick={() => dirInputRef.current?.click()}
+      >
+        Выбрать папку с PDF
+      </Button>
+
       <Button
         type="primary"
         icon={<PlayCircleOutlined />}
         size="large"
         block
-        style={{ marginTop: 16, borderRadius: 8, height: 44 }}
+        style={{ marginTop: 8, borderRadius: 8, height: 44 }}
         onClick={handleBatch}
         loading={loading}
         disabled={pendingCount === 0}

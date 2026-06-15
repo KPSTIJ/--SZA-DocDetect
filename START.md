@@ -116,6 +116,8 @@ python main.py pipeline
 
 ---
 
+---
+
 ## 7. Структура проекта
 
 ```
@@ -126,10 +128,73 @@ backend/             # FastAPI + SQLAlchemy + ML-модули
   services/          # pdf_service, file_service
   models/            # Pydantic-схемы, ORM-модели
   tests/             # unit-тесты
+  gunicorn.conf.py   # Gunicorn конфиг (продакшн)
 frontend/            # React + Ant Design + Vite
   src/
     api/             # axios-клиент
     store/           # Zustand-сторы
     components/      # React-компоненты
+deploy/              # Файлы деплоя на Ubuntu
+  deploy.sh          # Скрипт развёртывания
+  nginx.conf         # Nginx reverse proxy
+  pdf-splitter.service  # systemd unit
 main.py              # Точка входа (run/test/e2e/pipeline)
 ```
+
+---
+
+## 8. Деплой на Ubuntu Server (RTX 5080)
+
+### Подготовка
+
+```bash
+sudo apt update && sudo apt install -y python3.11 python3.11-venv nginx git nodejs npm
+```
+
+### Установка CUDA 12.x для RTX 5080
+
+Установите [CUDA 12.4+](https://developer.nvidia.com/cuda-downloads) с официального сайта NVIDIA.
+
+### Автоматический деплой
+
+```bash
+# Клонировать и запустить deploy.sh (предварительно указав REPO_URL)
+sudo bash deploy/deploy.sh
+```
+
+### Ручной деплой
+
+```bash
+# 1. Клонировать проект
+git clone <repo-url> /opt/pdf-dossier-splitter
+cd /opt/pdf-dossier-splitter
+
+# 2. Python venv + GPU
+python3.11 -m venv venv
+source venv/bin/activate
+pip install paddlepaddle-gpu==3.0.0rc0 \
+  -f https://www.paddlepaddle.org.cn/whl/linux/cuda12/stable.html
+pip install -r backend/requirements.prod.txt
+pip install -r backend/requirements.ml.txt
+
+# 3. .env
+cp .env.example .env
+nano .env   # отредактировать OLLAMA_BASE_URL, CORS_ORIGINS и др.
+
+# 4. Frontend
+cd frontend && npm install && npm run build && cd ..
+
+# 5. Запустить сервис
+cp deploy/pdf-splitter.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now pdf-splitter
+
+# 6. Nginx
+cp deploy/nginx.conf /etc/nginx/sites-available/pdf-splitter
+ln -s /etc/nginx/sites-available/pdf-splitter /etc/nginx/sites-enabled/
+nginx -t && systemctl restart nginx
+```
+
+После деплоя:
+- API: `http://<server-ip>/api/`
+- UI: `http://<server-ip>/`
+- `/docs` — Swagger документация

@@ -20,7 +20,7 @@ const SettingsPage = () => {
 
   return (
     <Row gutter={[24, 24]}>
-      <Col xs={24} lg={14}>
+      <Col xs={24} lg={16}>
         <div style={sectionStyle}>
           <div style={{
             padding: '16px 24px',
@@ -37,7 +37,7 @@ const SettingsPage = () => {
           </div>
         </div>
       </Col>
-      <Col xs={24} lg={10}>
+      <Col xs={24} lg={8}>
         <div style={sectionStyle}>
           <div style={{
             padding: '16px 24px',

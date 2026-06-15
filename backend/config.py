@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
 
+    CORS_ORIGINS: str = "http://localhost:5173"
+
     LOGGING_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env")

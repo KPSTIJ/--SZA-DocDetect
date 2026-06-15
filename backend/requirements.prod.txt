@@ -1,0 +1,26 @@
+# Production dependencies for Ubuntu + RTX 5080 (CUDA 12.x)
+# Установка: pip install -r requirements.prod.txt
+
+# Core
+fastapi>=0.111
+uvicorn[standard]
+gunicorn
+sqlalchemy>=2.0
+aiosqlite
+alembic
+pydantic-settings
+pydantic>=2
+pymupdf
+numpy
+Pillow
+httpx
+rapidfuzz
+python-multipart
+opencv-python-headless
+
+# GPU (CUDA 12.x для RTX 5080)
+# PaddlePaddle GPU — на Ubuntu ставится через:
+#   python -m pip install paddlepaddle-gpu==3.0.0rc0 -f https://www.paddlepaddle.org.cn/whl/linux/cuda12/stable.html
+# Либо через requirements.ml.txt + ручная установка paddlepaddle-gpu
+paddleocr
+doclayout-yolo

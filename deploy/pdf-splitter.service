@@ -1,0 +1,20 @@
+[Unit]
+Description=PDF Dossier Splitter API
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pdf-dossier-splitter
+Environment=PATH=/opt/pdf-dossier-splitter/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+EnvironmentFile=/opt/pdf-dossier-splitter/.env
+ExecStart=/opt/pdf-dossier-splitter/venv/bin/gunicorn backend.main:app -c backend/gunicorn.conf.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/pdf-dossier-splitter/logs/gunicorn.log
+StandardError=append:/opt/pdf-dossier-splitter/logs/gunicorn.err
+SyslogIdentifier=pdf-splitter
+
+[Install]
+WantedBy=multi-user.target

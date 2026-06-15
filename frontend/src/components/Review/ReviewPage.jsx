@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Card, Row, Col, Statistic, List, Tag, Button, Modal, Tooltip } from 'antd';
+import { Card, Row, Col, List, Tag, Button, Modal, Tooltip } from 'antd';
 import {
   ExclamationCircleOutlined,
   CheckCircleOutlined,
@@ -62,46 +62,22 @@ const ReviewPage = () => {
   return (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card style={statCardStyle} styles={{ body: { padding: '16px 20px' } }}>
-            <Statistic
-              title={            <span style={{ fontSize: 13, color: '#8a9a92' }}>Требуют проверки</span>}
-              value={stats.needs_review_count || 0}
-              prefix={<ExclamationCircleOutlined style={{ color: '#d4943a', fontSize: 20 }} />}
-              valueStyle={{ color: '#1a1a1a', fontSize: 28, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card style={statCardStyle} styles={{ body: { padding: '16px 20px' } }}>
-            <Statistic
-              title={            <span style={{ fontSize: 13, color: '#8a9a92' }}>Готово</span>}
-              value={stats.done_count || 0}
-              prefix={<CheckCircleOutlined style={{ color: '#1a6b4a', fontSize: 20 }} />}
-              valueStyle={{ color: '#1a1a1a', fontSize: 28, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card style={statCardStyle} styles={{ body: { padding: '16px 20px' } }}>
-            <Statistic
-              title={            <span style={{ fontSize: 13, color: '#8a9a92' }}>Ошибки</span>}
-              value={stats.failed_count || 0}
-              prefix={<CloseCircleOutlined style={{ color: '#c43a3a', fontSize: 20 }} />}
-              valueStyle={{ color: '#1a1a1a', fontSize: 28, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card style={statCardStyle} styles={{ body: { padding: '16px 20px' } }}>
-            <Statistic
-              title={            <span style={{ fontSize: 13, color: '#8a9a92' }}>Страниц с ошибками</span>}
-              value={stats.total_error_pages || 0}
-              prefix={<ExclamationCircleOutlined style={{ color: '#c43a3a', fontSize: 20 }} />}
-              valueStyle={{ color: '#1a1a1a', fontSize: 28, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
+        {[
+          { label: 'Требуют проверки', value: stats.needs_review_count || 0, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
+          { label: 'Готово', value: stats.done_count || 0, icon: <CheckCircleOutlined />, color: '#1a6b4a' },
+          { label: 'Ошибки', value: stats.failed_count || 0, icon: <CloseCircleOutlined />, color: '#c43a3a' },
+          { label: 'Страниц с ошибками', value: stats.total_error_pages || 0, icon: <ExclamationCircleOutlined />, color: '#c43a3a' },
+        ].map((item) => (
+          <Col key={item.label} xs={12} sm={6}>
+            <Card style={statCardStyle} styles={{ body: { padding: '16px 20px' } }}>
+              <div style={{ fontSize: 13, color: '#8a9a92', marginBottom: 8 }}>{item.label}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ color: item.color, fontSize: 22, display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+                <span style={{ color: '#1a1a1a', fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{item.value}</span>
+              </div>
+            </Card>
+          </Col>
+        ))}
       </Row>
 
       <div style={{

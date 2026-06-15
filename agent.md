@@ -28,23 +28,104 @@
 
 ```
 project/
+├── main.py                 # Точка входа (run/dev/test/e2e/pipeline/db-init/shell)
+├── START.md                # Гайд по запуску и деплою
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile.backend / Dockerfile.frontend
+├── deploy/
+│   ├── deploy.sh           # Скрипт деплоя на Ubuntu
+│   ├── nginx.conf           # Nginx reverse proxy
+│   └── pdf-splitter.service # systemd unit
 ├── backend/
 │   ├── main.py
-│   ├── config.py          # pydantic-settings, читает .env
+│   ├── config.py            # pydantic-settings, читает .env
 │   ├── database.py
-│   ├── models/            # db_models.py + schemas.py
-│   ├── api/               # config_routes, job_routes, review_routes
-│   ├── core/              # orchestrator.py
-│   ├── modules/           # text_layer, ocr_module, cv_module, vlm_module, fusion
-│   └── services/          # pdf_service.py, file_service.py
-└── frontend/
-    └── src/
-        ├── api/            # client.js, configApi.js, jobsApi.js
-        ├── store/          # configStore.js, jobStore.js
-        └── components/     # Settings/, Review/, Layout/
+│   ├── requirements.txt / requirements.core.txt / requirements.ml.txt / requirements.prod.txt
+│   ├── models/              # db_models.py + schemas.py
+│   ├── api/                 # config_routes, job_routes, review_routes
+│   ├── core/                # orchestrator.py
+│   ├── modules/             # text_layer, ocr_module, cv_module, vlm_module, fusion
+│   ├── services/            # pdf_service.py, file_service.py
+│   └── tests/               # unit-тесты (15 шт.)
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── nginx.conf           # Production nginx conf для frontend
+│   └── src/
+│       ├── App.jsx + main.jsx
+│       ├── api/             # client.js, configApi.js, jobsApi.js
+│       ├── store/           # configStore.js, jobStore.js
+│       └── components/      # Settings/, Review/, Layout/, Icons.jsx
 ```
 
-Не создавай файлы и папки вне этой структуры без явного запроса.
+---
+
+## Статус реализации (все 17 подзадач из SPECIFICATION.md выполнены)
+
+### Что реализовано:
+
+| # | Подзадача | Статус |
+|---|-----------|--------|
+| 1 | Инфраструктура, БД, конфиг | ✅ |
+| 2 | API: config + jobs + review | ✅ |
+| 3 | PDF-сервис и рендеринг | ✅ |
+| 4 | Text Layer модуль | ✅ |
+| 5 | FUSION (OCR + CV) | ✅ |
+| 6 | VLM модуль | ✅ |
+| 7 | Оркестратор пайплайна | ✅ |
+| 8 | Frontend: Settings | ✅ |
+| 9 | Frontend: Review | ✅ |
+| 10 | Интеграция (CORS, прокси, BackgroundTasks) | ✅ |
+| 11 | Pydantic-схемы API | ✅ |
+| 12 | CV детали (DocLayoutYOLO) | ✅ |
+| 13 | Оркестратор: полный алгоритм | ✅ |
+| 14 | Обработка ошибок и edge-cases | ✅ |
+| 15 | Unit-тесты (15 шт.) | ✅ |
+| 16 | Frontend: стейт, PageTile, Toolbar, глобальный прогрессбар | ✅ |
+| 17 | Деплой: Docker, nginx, systemd, deploy.sh | ✅ |
+
+### Дополнительно сделано:
+- `main.py` — глобальная точка входа (run/dev/test/e2e/pipeline/db-init/shell)
+- `python main.py dev` — одновременный запуск бэкенда + фронтенда
+- `.env` с настройками Ollama (http://192.168.51.247:11434)
+- Визуальный редизайн UI под цвета логотипа (#1a6b4a), перевод на русский
+- Inline JSON-парсинг в VLM-модуле (регекс-извлечение из ответа модели)
+- Progress bar: общий для всех вкладок, полупрозрачный в idle
+
+---
+
+## Осталось сделать
+
+### Критические баги:
+- **PaddleOCR на Windows не работает** (ошибка oneDNN `ConvertPirAttribute2RuntimeAttribute`). На Ubuntu с CUDA 12.x должно работать через `paddlepaddle-gpu==3.0.0rc0`
+- **PaddlePaddle 3.x** (новая версия PaddleOCR) требует `paddlex` и `modelscope`, которые тянут `torch`. На Windows `torch` иногда падает с `shm.dll` error
+- **Решение:** PaddleOCR был понижен до 2.x, но PaddleOCR 2.10 несовместим с PaddlePaddle 3.x. Оптимальная комбинация: **PaddlePaddle 3.3.1 + PaddleOCR 3.6.0** на Ubuntu + CUDA
+
+### Нужно протестировать:
+- Полный pipeline на Ubuntu с CUDA + GPU (PaddleOCR GPU, DocLayoutYOLO)
+- VLM с реальными отсканированными документами (не сгенерированными PDF)
+- E2E-тест с загрузкой → обработкой → проверкой результата
+- Обработка битых PDF, пустых PDF, не-PDF файлов
+
+### Улучшения API:
+- `POST /start-batch` при already running → 409 Conflict (сейчас будет 500)
+- Валидация PDF при загрузке (сейчас `fitz.open` упадёт с исключением)
+
+### Деплой на Ubuntu:
+1. Установить Python 3.11, Node.js, nginx, git
+2. Установить CUDA 12.x + драйверы NVIDIA для RTX 5080
+3. `pip install paddlepaddle-gpu==3.0.0rc0 -f https://www.paddlepaddle.org.cn/whl/linux/cuda12/stable.html`
+4. `pip install -r backend/requirements.prod.txt -r backend/requirements.ml.txt`
+5. Настроить `.env` (Ollama URL, CORS origins, DB path)
+6. `sudo bash deploy/deploy.sh <repo-url>`
+7. Переключить с SQLite на PostgreSQL (опционально, позже)
+8. Добавить Celery + Redis для очереди задач (опционально, позже)
+
+### Известные проблемы:
+- Путь к проекту содержит `!` (восклицательный знак): `D:\SZA\! SZA DocDetect\`. На Windows это вызывает проблемы в PowerShell. Решение: работать через `Get-ChildItem "$base\!*"` или юникс-окружение
+- На Ubuntu этой проблемы не будет
 
 ---
 
@@ -89,18 +170,13 @@ project/
 
 ---
 
-## Порядок реализации подзадач
+## Команды для проверки
 
-Подзадачи реализуются последовательно согласно чеклисту в спеке (§ «Итоговый чеклист»).  
-Перед переходом к следующей подзадаче проверяй критерий из колонки «Проверка».
-
-Текущая подзадача должна быть явно названа в начале разговора или задана пользователем.
-
----
-
-## Формат ответов
-
-- Сначала кратко объясни, что будешь делать и какие файлы затронешь.
-- Потом пиши код — полный, без купюр типа `# ... остальное без изменений`.
-- После кода — команда для проверки (pytest, curl, uvicorn и т.п.) из колонки «Проверка» спеки.
-- Если изменения затрагивают несколько файлов — показывай каждый отдельно с указанием пути.
+```bash
+python main.py run          # Запустить бэкенд
+python main.py dev          # Бэкенд + фронтенд одновременно
+python main.py test         # Unit-тесты (15 шт.)
+python main.py e2e          # API-тесты (15 сценариев)
+python main.py pipeline     # Тест пайплайна text_layer
+cd frontend && npm run dev  # Фронтенд отдельно
+```

@@ -1,3 +1,4 @@
+import sys
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,32 +7,35 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from backend.config import Settings
 from backend.database import Base, get_engine, get_sessionmaker
 from backend.api.router import router
 
 logger = logging.getLogger(__name__)
 
+_settings = Settings()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = Settings()
     logging.basicConfig(
-        level=getattr(logging, settings.LOGGING_LEVEL.upper(), logging.INFO),
+        level=getattr(logging, _settings.LOGGING_LEVEL.upper(), logging.INFO),
         format="[%(asctime)s] %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    for dir_path in [settings.INPUT_DIR, settings.OUTPUT_DIR, settings.TEMP_DIR]:
+    for dir_path in [_settings.INPUT_DIR, _settings.OUTPUT_DIR, _settings.TEMP_DIR]:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-    engine = get_engine(settings)
+    engine = get_engine(_settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     app.state.engine = engine
     app.state.sessionmaker = get_sessionmaker(engine)
-    app.state.settings = settings
+    app.state.settings = _settings
 
     ocr_module = None
     cv_module = None
@@ -53,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     try:
         from backend.modules.vlm_module import VLMModule
-        vlm_module = VLMModule(settings)
+        vlm_module = VLMModule(_settings)
         logger.info("VLMModule initialized")
     except Exception as e:
         logger.warning("VLMModule not available: %s", e)
@@ -71,7 +75,7 @@ app = FastAPI(title="PDF Dossier Splitter", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_settings.CORS_ORIGINS.split(",") if _settings.CORS_ORIGINS else ["http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

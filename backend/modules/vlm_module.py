@@ -100,11 +100,21 @@ class VLMModule:
                 resp.raise_for_status()
                 data = resp.json()
                 content = data.get("message", {}).get("content", "")
-                parsed = json.loads(content)
+                try:
+                    parsed = json.loads(content)
+                except json.JSONDecodeError:
+                    import re
+                    match = re.search(r'\{[^{}]*"type"[^{}]*"confidence"[^{}]*\}', content, re.DOTALL)
+                    if match:
+                        parsed = json.loads(match.group())
+                    else:
+                        logger.warning("VLM response is not valid JSON: %s", content[:200])
+                        return VLMResult(type_id="undetected", confidence=0.0, raw_response=content)
                 return VLMResult(
                     type_id=parsed.get("type", "undetected"),
                     confidence=float(parsed.get("confidence", 0.0)),
                     raw_response=content,
                 )
-        except Exception:
+        except Exception as e:
+            logger.error("VLM request failed: %s", e)
             return VLMResult(type_id="undetected", confidence=0.0, raw_response=None)

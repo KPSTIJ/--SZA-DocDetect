@@ -257,6 +257,68 @@ def cmd_db_init():
     asyncio.run(_init())
 
 
+def cmd_dev():
+    """Запустить бэкенд + фронтенд одновременно."""
+    import subprocess
+    import time
+
+    frontend_dir = os.path.join(ROOT_DIR, "frontend")
+    node_path = "C:\\Program Files\\nodejs"
+
+    print("=" * 50)
+    print("  PDF Dossier Splitter — DEV MODE")
+    print("=" * 50)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{node_path};{env.get('PATH', '')}"
+    processes = []
+
+    try:
+        print("  [1/2] Starting backend (uvicorn)...")
+        be = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "backend.main:app",
+             "--host", "127.0.0.1", "--port", "8000", "--reload",
+             "--reload-dir", BACKEND_DIR],
+            cwd=ROOT_DIR, env=env,
+        )
+        processes.append(be)
+
+        print("  [2/2] Starting frontend (vite)...")
+        fe = subprocess.Popen(
+            ["npx.cmd", "vite", "--host", "127.0.0.1", "--port", "5173"],
+            cwd=frontend_dir, env=env, shell=True,
+        )
+        processes.append(fe)
+
+        time.sleep(2)
+        print()
+        print(f"  Backend:  http://127.0.0.1:8000")
+        print(f"  Frontend: http://127.0.0.1:5173")
+        print(f"  Docs:     http://127.0.0.1:8000/docs")
+        print()
+        print("  Press Ctrl+C to stop both servers")
+        print("=" * 50)
+
+        while all(p.poll() is None for p in processes):
+            time.sleep(0.5)
+
+        for p in processes:
+            if p.poll() is not None and p.returncode != 0:
+                print(f"  [WARN] Process exited with code {p.returncode}")
+
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        for p in processes:
+            if p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        print("  Stopped.")
+
+
 def cmd_shell():
     """Интерактивная оболочка."""
     sys.path.insert(0, ROOT_DIR)
@@ -298,12 +360,13 @@ def _cleanup_data():
 
 def main():
     parser = argparse.ArgumentParser(description="PDF Dossier Splitter")
-    parser.add_argument("command", choices=["run", "test", "e2e", "pipeline", "db-init", "shell"],
+    parser.add_argument("command", choices=["run", "dev", "test", "e2e", "pipeline", "db-init", "shell"],
                         help="Command to execute")
     args = parser.parse_args()
 
     commands = {
         "run": cmd_run,
+        "dev": cmd_dev,
         "test": cmd_test,
         "e2e": cmd_e2e,
         "pipeline": cmd_pipeline,
@@ -316,3 +379,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

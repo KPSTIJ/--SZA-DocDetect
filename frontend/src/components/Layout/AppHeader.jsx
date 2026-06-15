@@ -2,6 +2,12 @@ import React from 'react';
 import { Tabs } from 'antd';
 import { Settings, Review } from '../Icons';
 
+const antdTabOverride = `
+  .ant-tabs-nav::before { border-bottom: none !important; }
+  .ant-tabs-nav { border-bottom: none !important; box-shadow: none !important; }
+  .ant-tabs-ink-bar { display: none !important; }
+`;
+
 const AppHeader = ({ activeTab, onTabChange }) => (
   <div style={{
     background: 'linear-gradient(135deg, #0d4a30 0%, #1a6b4a 100%)',
@@ -11,6 +17,7 @@ const AppHeader = ({ activeTab, onTabChange }) => (
     top: 0,
     zIndex: 100,
   }}>
+    <style>{antdTabOverride}</style>
     <div style={{
       display: 'flex',
       alignItems: 'center',
@@ -24,8 +31,8 @@ const AppHeader = ({ activeTab, onTabChange }) => (
         style={{ height: 44, width: 'auto', marginRight: 16, borderRadius: 8 }}
       />
       <div style={{ flex: 1 }}>
-        <div style={{ color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px' }}>
-          PDF Dossier Splitter
+        <div style={{ color: '#fff', fontSize: 24, fontWeight: 700, letterSpacing: '-0.3px' }}>
+          SZA DocDetect
         </div>
         <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 1 }}>
           Система автоматической разрезки PDF-досье
@@ -56,8 +63,12 @@ const AppHeader = ({ activeTab, onTabChange }) => (
         ]}
         style={{ marginBottom: 0 }}
         tabBarStyle={{
-          marginBottom: 0, borderBottom: 'none',
+          marginBottom: 0,
+          borderBottom: 'none',
+          background: 'transparent',
+          boxShadow: 'none',
         }}
+        indicator={{ size: 0 }}
       />
     </div>
   </div>
