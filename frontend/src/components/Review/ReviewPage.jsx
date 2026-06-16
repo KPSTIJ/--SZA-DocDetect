@@ -145,9 +145,9 @@ const ReviewPage = () => {
                         </div>
                         <div style={{ marginTop: 'auto' }} onClick={e => e.stopPropagation()}>
                           <Tooltip title="Открыть исходный PDF">
-                            <Button type="text" size="small" icon={<EyeOutlined />}
+                            <Button size="small" icon={<EyeOutlined />}
                               href={`/api/jobs/${jid}/source`} target="_blank"
-                              style={{ color: 'var(--text-secondary)' }} />
+                              style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', background: 'var(--bg-elevated)' }} />
                           </Tooltip>
                         </div>
                       </div>

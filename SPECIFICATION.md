@@ -560,7 +560,10 @@ src/
     │   ├── DocumentTypeForm.jsx  # создание/редактирование
     │   └── UploadSection.jsx     # загрузка PDF + кнопка запуска
     └── Review/
-        └── (подзадача 9)
+        ├── ReviewPage.jsx         # список досье с фильтрами, сетка 4 колонки
+        ├── DossierModal.jsx       # модальное окно для работы с досье
+        ├── PageTile.jsx           # миниатюра страницы с превью, чекбоксом, цветным бортом
+        └── FloatingAssignToolbar.jsx  # плавающая панель массового назначения
 ```
 
 ### 8.2 Settings Page
