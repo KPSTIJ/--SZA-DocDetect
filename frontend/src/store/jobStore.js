@@ -11,15 +11,15 @@ const useJobStore = create((set, get) => ({
   getProgress: () => {
     const jobs = get().jobs;
     const total = jobs.length;
-    if (total === 0) return { total: 0, pending: 0, running: 0, done: 0, failed: 0, needs_review: 0, percent: 0 };
+    if (total === 0) return { total: 0, pending: 0, running: 0, done: 0, needs_review: 0, failed: 0, percent: 0 };
     const pending = jobs.filter(j => j.status === 'pending').length;
     const running = jobs.filter(j => j.status === 'running').length;
-    const done = jobs.filter(j => j.status === 'done').length;
     const failed = jobs.filter(j => j.status === 'failed').length;
-    const needs_review = jobs.filter(j => j.status === 'needs_review').length;
+    const done = jobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
+    const needs_review = jobs.filter(j => j.status === 'needs_review' || (j.status === 'done' && (j.error_pages || 0) > 0)).length;
     const completed = done + failed + needs_review;
     const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { total, pending, running, done, failed, needs_review, percent, completed };
+    return { total, pending, running, done, needs_review, failed, percent, completed };
   },
 
   uploadFiles: async (files) => {

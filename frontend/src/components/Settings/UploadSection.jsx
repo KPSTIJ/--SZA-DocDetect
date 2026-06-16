@@ -5,12 +5,12 @@ import useJobStore from '../../store/jobStore';
 
 const { Dragger } = Upload;
 
-const statusColors = {
-  pending: { color: 'var(--text-tertiary)', bg: 'var(--bg-elevated)' },
-  running: { color: 'var(--accent)', bg: 'var(--accent-bg)' },
-  done: { color: 'var(--accent)', bg: 'var(--accent-bg)' },
-  failed: { color: '#d13a3a', bg: 'rgba(209,58,58,0.12)' },
-  needs_review: { color: '#d4943a', bg: 'rgba(212,148,58,0.12)' },
+const statusConfig = {
+  pending: { color: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', label: 'Ожидает' },
+  running: { color: 'var(--accent)', bg: 'var(--accent-bg)', label: 'В обработке' },
+  done: { color: 'var(--accent)', bg: 'var(--accent-bg)', label: 'Готово' },
+  failed: { color: '#d13a3a', bg: 'rgba(209,58,58,0.12)', label: 'Ошибка' },
+  needs_review: { color: '#d4943a', bg: 'rgba(212,148,58,0.12)', label: 'На проверке' },
 };
 
 const UploadSection = () => {
@@ -56,7 +56,7 @@ const UploadSection = () => {
         style={{ background: 'var(--dragger-bg)', border: '2px dashed var(--border)', borderRadius: 10, padding: 24 }}
       >
         <div style={{ fontSize: 40, color: 'var(--accent)', marginBottom: 8 }}><InboxOutlined /></div>
-        <p style={{ color: 'var(--text)', fontSize: 15, marginBottom: 4 }}>Нажмите или перетащите PDF-файлы сюда</p>
+        <p style={{ color: 'var(--text)', fontSize: 15, marginBottom: 4 }}>Нажмите или перетащите PDF-файлы</p>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Поддерживается загрузка нескольких файлов</p>
       </Dragger>
       <Button icon={<FolderOpenOutlined />} size="large" block
@@ -74,14 +74,14 @@ const UploadSection = () => {
           </div>
           <List size="small" dataSource={jobs.slice(0, 10)}
             renderItem={(job) => {
-              const sc = statusColors[job.status] || statusColors.pending;
+              const sc = statusConfig[job.status] || statusConfig.pending;
               return (
                 <List.Item style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                   <List.Item.Meta
                     title={<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{job.source_filename}</span>}
-                    description={<span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{job.total_pages || '?'} pages</span>}
+                    description={<span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{job.total_pages || '?'} стр.</span>}
                   />
-                  <Tag style={{ background: sc.bg, color: sc.color, border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{job.status}</Tag>
+                  <Tag style={{ background: sc.bg, color: sc.color, border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{sc.label}</Tag>
                 </List.Item>
               );
             }}

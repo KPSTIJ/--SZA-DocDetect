@@ -1,9 +1,12 @@
 import logging
+import os
 from dataclasses import dataclass
 import numpy as np
 from rapidfuzz import fuzz
 
 logger = logging.getLogger(__name__)
+
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
 
 @dataclass

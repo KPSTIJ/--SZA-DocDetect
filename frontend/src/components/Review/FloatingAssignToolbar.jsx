@@ -25,9 +25,9 @@ const FloatingAssignToolbar = ({ jobId }) => {
   return createPortal(
     <div style={{
       position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--bg-elevated)', padding: '12px 20px', borderRadius: 10,
-      boxShadow: '0 4px 20px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
-      zIndex: 1000, display: 'flex', alignItems: 'center', gap: 12,
+      background: 'var(--bg-card)', padding: '12px 20px', borderRadius: 10,
+      boxShadow: '0 4px 24px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
+      zIndex: 1060, display: 'flex', alignItems: 'center', gap: 12,
     }}>
       <Tag style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', color: 'var(--accent)', borderRadius: 6, padding: '2px 10px', fontWeight: 600, fontSize: 13 }}>
         {selectedPages.size} стр.

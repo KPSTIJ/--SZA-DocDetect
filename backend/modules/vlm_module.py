@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from io import BytesIO
 from dataclasses import dataclass
 import numpy as np
@@ -8,6 +9,8 @@ from PIL import Image
 
 from backend.config import Settings
 from backend.modules.text_layer import PageAssignment
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -48,6 +51,11 @@ class VLMModule:
 
     def _image_to_base64(self, image: np.ndarray) -> str:
         pil_img = Image.fromarray(image.astype(np.uint8))
+        w, h = pil_img.size
+        max_dim = 1024
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         buf = BytesIO()
         pil_img.save(buf, format="JPEG", quality=85)
         return base64.b64encode(buf.getvalue()).decode("utf-8")

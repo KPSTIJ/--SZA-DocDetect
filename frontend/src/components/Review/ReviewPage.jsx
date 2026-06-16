@@ -1,60 +1,65 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Card, Row, Col, List, Tag, Button, Modal, Tooltip } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Card, Row, Col, Button, Tooltip, Space } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  EyeOutlined, DownOutlined, RightOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
-import useConfigStore from '../../store/configStore';
-import PageTile from './PageTile';
-import FloatingAssignToolbar from './FloatingAssignToolbar';
+import DossierModal from './DossierModal';
+
+const getJobColor = (job) => {
+  if (job.status === 'failed') return { strip: '#d13a3a', label: 'Ошибка' };
+  if (job.error_pages > 0) return { strip: '#d4943a', label: 'Частичные ошибки' };
+  return { strip: '#2ea86b', label: 'Корректно' };
+};
+
+const FILTERS = [
+  { key: 'errors', label: 'Нужна проверка', color: '#d4943a' },
+  { key: 'all', label: 'Все', color: 'var(--text-secondary)' },
+  { key: 'failed', label: 'Ошибка', color: '#d13a3a' },
+  { key: 'ok', label: 'Корректные', color: '#2ea86b' },
+];
 
 const ReviewPage = () => {
-  const { reviewJobs, fetchReviewJobs, startPolling, stopPolling, selectedPages, togglePageSelection, confirmJob } = useJobStore();
-  const { fetchDocumentTypes } = useConfigStore();
+  const { reviewJobs, fetchReviewJobs, startPolling, stopPolling } = useJobStore();
 
   useEffect(() => {
     fetchReviewJobs();
-    fetchDocumentTypes();
     startPolling();
     return () => stopPolling();
-  }, [fetchReviewJobs, fetchDocumentTypes, startPolling, stopPolling]);
+  }, [fetchReviewJobs, startPolling, stopPolling]);
 
-  const [expandedJobs, setExpandedJobs] = useState({});
-  const [pagePages, setPagePages] = useState({});
-  const [previewModal, setPreviewModal] = useState({ open: false, jobId: null, pageNum: null });
+  const [filterTab, setFilterTab] = useState('errors');
+  const [dossierModal, setDossierModal] = useState({ open: false, job: null });
 
-  const { stats, needs_review } = reviewJobs;
+  const allJobs = [
+    ...(reviewJobs.needs_review || []),
+    ...(reviewJobs.done || []),
+    ...(reviewJobs.failed || []),
+  ];
 
-  const handleToggleExpand = useCallback(async (jobId) => {
-    if (!expandedJobs[jobId]) {
-      try {
-        const { getJobPages } = await import('../../api/jobsApi');
-        const res = await getJobPages(jobId);
-        setPagePages((prev) => ({ ...prev, [jobId]: res.data }));
-      } catch {}
-    }
-    setExpandedJobs((prev) => ({ ...prev, [jobId]: !prev[jobId] }));
-  }, [expandedJobs]);
-
-  const handleConfirm = (jobId) => {
-    Modal.confirm({
-      title: 'Подтвердить и склеить?', icon: null,
-      content: <span style={{ color: 'var(--text-secondary)' }}>Создать итоговые PDF-файлы на основе текущего распределения страниц?</span>,
-      okText: 'Подтвердить', onOk: () => confirmJob(jobId),
-    });
+  const stats = {
+    needs_review_count: allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed').length,
+    done_count: allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length,
+    failed_count: allJobs.filter(j => j.status === 'failed').length,
+    total_pages: allJobs.reduce((s, j) => s + (j.total_pages || 0), 0),
+    total_error_pages: allJobs.reduce((s, j) => s + (j.error_pages || 0), 0),
   };
 
-  const expandedJobId = Object.keys(expandedJobs).find((k) => expandedJobs[k]);
+  const filteredJobs = filterTab === 'all' ? allJobs
+    : filterTab === 'errors' ? allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed')
+    : filterTab === 'failed' ? allJobs.filter(j => j.status === 'failed')
+    : filterTab === 'ok' ? allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0)
+    : allJobs;
 
   return (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {[
-          { label: 'Требуют проверки', value: stats.needs_review_count || 0, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
-          { label: 'Готово', value: stats.done_count || 0, icon: <CheckCircleOutlined />, color: 'var(--accent)' },
-          { label: 'Ошибки', value: stats.failed_count || 0, icon: <CloseCircleOutlined />, color: '#d13a3a' },
-          { label: 'Страниц с ошибками', value: stats.total_error_pages || 0, icon: <ExclamationCircleOutlined />, color: '#d13a3a' },
+          { label: 'Требуют проверки', value: stats.needs_review_count, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
+          { label: 'Готово', value: stats.done_count, icon: <CheckCircleOutlined />, color: 'var(--accent)' },
+          { label: 'Ошибки', value: stats.failed_count, icon: <CloseCircleOutlined />, color: '#d13a3a' },
+          { label: 'Всего страниц', value: stats.total_pages, icon: <div style={{ fontSize: 18, fontWeight: 700, lineHeight: '22px' }}>Σ</div>, color: 'var(--text-secondary)' },
         ].map((item) => (
           <Col key={item.label} xs={12} sm={6}>
             <Card style={{ borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)' }} styles={{ body: { padding: '16px 20px' } }}>
@@ -69,100 +74,99 @@ const ReviewPage = () => {
       </Row>
 
       <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)' }}>
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
-          Досье, требующие проверки
-        </div>
-        <div style={{ padding: '12px 16px' }}>
-          <List
-            dataSource={needs_review}
-            locale={{
-              emptyText: (
-                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                  <CheckCircleOutlined style={{ fontSize: 32, color: 'var(--accent)', marginBottom: 8 }} />
-                  <div style={{ color: 'var(--text-secondary)' }}>Все досье обработаны успешно</div>
-                </div>
-              ),
-            }}
-            renderItem={(job) => {
-              const isExpanded = Boolean(expandedJobs[job.job_id]);
-              const pages = pagePages[job.job_id] || [];
-              const jid = job.job_id;
-              const hasErrors = job.error_pages > 0;
+        <div style={{
+          padding: '16px 24px', borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <Space>
+            <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>Досье</span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--accent-bg)', color: 'var(--accent)',
+              borderRadius: 10, fontSize: 12, fontWeight: 700,
+              padding: '2px 10px', lineHeight: '20px',
+            }}>
+              {filteredJobs.length}
+            </span>
+          </Space>
+          <Space size={6}>
+            {FILTERS.map(f => {
+              const active = filterTab === f.key;
               return (
-                <Card size="small" key={jid} style={{
-                  marginBottom: 8, borderRadius: 8, background: 'var(--bg-card)',
-                  borderLeft: `4px solid ${hasErrors ? '#d4943a' : '#d13a3a'}`,
-                  borderTop: '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
-                }} styles={{ body: { padding: '12px 16px' } }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-                      <Button type="text" size="small" icon={isExpanded ? <DownOutlined /> : <RightOutlined />}
-                        onClick={() => handleToggleExpand(jid)} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <div style={{ minWidth: 0 }}>
+                <Button
+                  key={f.key}
+                  size="small"
+                  onClick={() => setFilterTab(f.key)}
+                  style={{
+                    borderRadius: 6, fontSize: 12, fontWeight: active ? 700 : 500,
+                    border: active ? `1.5px solid ${f.color}` : '1px solid var(--border)',
+                    color: active ? f.color : 'var(--text-secondary)',
+                    background: active ? (f.color + '18') : 'var(--bg-elevated)',
+                  }}
+                >
+                  {f.label}
+                </Button>
+              );
+            })}
+          </Space>
+        </div>
+
+        <div style={{ padding: '16px' }}>
+          {filteredJobs.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
+              <CheckCircleOutlined style={{ fontSize: 32, color: 'var(--accent)', marginBottom: 8 }} />
+              <div style={{ color: 'var(--text-secondary)' }}>Нет досье</div>
+            </div>
+          ) : (
+            <Row gutter={[12, 12]}>
+              {filteredJobs.map((job) => {
+                const jid = job.job_id;
+                const color = getJobColor(job);
+
+                return (
+                  <Col key={jid} xs={24} sm={12} md={8} lg={6}>
+                    <Card
+                      size="small"
+                      hoverable
+                      onClick={() => setDossierModal({ open: true, job })}
+                      style={{
+                        borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                        border: '1px solid var(--border)', background: 'var(--bg-card)', height: '100%',
+                      }}
+                      styles={{ body: { padding: '12px 16px' } }}
+                    >
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: color.strip }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', paddingTop: 4 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {job.source_filename}
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                          {job.total_pages || '?'} страниц ·{' '}
-                          <Tag style={{
-                            background: statusColors[job.status]?.bg || 'var(--bg-elevated)',
-                            color: statusColors[job.status]?.color || 'var(--text-tertiary)',
-                            border: 'none', borderRadius: 4, fontSize: 11,
-                          }}>{job.status}</Tag>
+                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, marginBottom: 10 }}>
+                          {job.total_pages || '?'} стр · {color.label}
+                        </div>
+                        <div style={{ marginTop: 'auto' }} onClick={e => e.stopPropagation()}>
+                          <Tooltip title="Открыть исходный PDF">
+                            <Button type="text" size="small" icon={<EyeOutlined />}
+                              href={`/api/jobs/${jid}/source`} target="_blank"
+                              style={{ color: 'var(--text-secondary)' }} />
+                          </Tooltip>
                         </div>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                      <Tooltip title="Открыть исходный PDF">
-                        <Button type="text" icon={<EyeOutlined />} href={`/api/jobs/${jid}/source`} target="_blank" style={{ color: 'var(--text-secondary)' }} />
-                      </Tooltip>
-                      <Button size="small" onClick={() => handleToggleExpand(jid)}
-                        style={{ borderRadius: 6, borderColor: 'var(--border)', color: 'var(--text-secondary)', fontSize: 12, background: 'var(--bg-elevated)' }}>
-                        {isExpanded ? 'Свернуть' : 'Просмотр'}
-                      </Button>
-                      <Button size="small" type="primary" onClick={() => handleConfirm(jid)} style={{ borderRadius: 6, fontSize: 12 }}>
-                        Подтвердить и склеить
-                      </Button>
-                    </div>
-                  </div>
-                  {isExpanded && (
-                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: 4 }}>
-                      {pages.map((page) => (
-                        <span key={page.page_number} style={{ display: 'inline-block', marginRight: 8 }}>
-                          <PageTile jobId={jid} page={page}
-                            isSelected={selectedPages[jid]?.has(page.page_number)}
-                            onToggleSelect={(pn) => togglePageSelection(jid, pn)}
-                            onClickPreview={(pn) => setPreviewModal({ open: true, jobId: jid, pageNum: pn })} />
-                        </span>
-                      ))}
-                      {pages.length === 0 && <div style={{ color: 'var(--text-tertiary)', fontSize: 13, padding: 8, textAlign: 'center' }}>Нет данных о страницах</div>}
-                    </div>
-                  )}
-                </Card>
-              );
-            }}
-          />
+                    </Card>
+                  </Col>
+                );
+              })}
+            </Row>
+          )}
         </div>
       </div>
 
-      {expandedJobId && <FloatingAssignToolbar jobId={expandedJobId} />}
-
-      <Modal title={<span style={{ color: 'var(--text)' }}>Страница {previewModal.pageNum != null ? previewModal.pageNum + 1 : ''}</span>}
-        open={previewModal.open} onCancel={() => setPreviewModal({ open: false, jobId: null, pageNum: null })}
-        footer={null} width={800} styles={{ body: { padding: 0 } }}>
-        {previewModal.jobId && previewModal.pageNum != null && (
-          <img src={`/api/jobs/${previewModal.jobId}/page/${previewModal.pageNum}/preview`}
-            alt={`Page ${previewModal.pageNum}`} style={{ width: '100%', display: 'block' }} />
-        )}
-      </Modal>
+      <DossierModal
+        open={dossierModal.open}
+        job={dossierModal.job}
+        onClose={() => setDossierModal({ open: false, job: null })}
+      />
     </div>
   );
-};
-
-const statusColors = {
-  needs_review: { color: '#d4943a', bg: 'rgba(212,148,58,0.12)' },
-  done: { color: '#2ea86b', bg: 'rgba(46,168,107,0.12)' },
-  failed: { color: '#d13a3a', bg: 'rgba(209,58,58,0.12)' },
 };
 
 export default ReviewPage;

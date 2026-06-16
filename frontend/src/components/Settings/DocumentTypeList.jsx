@@ -66,7 +66,7 @@ const DocumentTypeList = () => {
       width: 100,
       render: (_, record) => (
         <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-          {record.min_pages}–{record.max_pages}
+          {record.min_pages}&ndash;{record.max_pages}
         </span>
       ),
     },
@@ -88,8 +88,12 @@ const DocumentTypeList = () => {
   ];
 
   return (
-    <>
-      <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end' }}>
+    <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <div style={{
+        padding: '16px 24px', borderBottom: '1px solid var(--border)',
+        background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>Типы документов</span>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalOpen(true); }} style={{ borderRadius: 6 }}>
           Добавить тип документа
         </Button>
@@ -100,7 +104,6 @@ const DocumentTypeList = () => {
         rowKey="id"
         loading={loading}
         pagination={false}
-        style={{ borderTop: '1px solid var(--border)' }}
       />
       <Modal
         title={<span style={{ color: 'var(--text)', fontWeight: 600 }}>{editing ? 'Редактировать тип документа' : 'Новый тип документа'}</span>}
@@ -118,7 +121,7 @@ const DocumentTypeList = () => {
           }}
         />
       </Modal>
-    </>
+    </div>
   );
 };
 

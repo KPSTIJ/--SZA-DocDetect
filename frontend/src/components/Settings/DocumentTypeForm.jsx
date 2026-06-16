@@ -29,7 +29,7 @@ const DocumentTypeForm = ({ initialValues, onSuccess }) => {
     >
       <Form.Item
         name="id"
-        label={<span style={{ fontWeight: 500, color: '#e4e6eb' }}>ID (alias)</span>}
+        label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>ID (alias)</span>}
         rules={[
           { required: true, message: 'Обязательное поле' },
           { pattern: /^[a-z][a-z0-9_]*$/, message: 'Только [a-z0-9_], начинается с буквы' },
@@ -39,28 +39,28 @@ const DocumentTypeForm = ({ initialValues, onSuccess }) => {
       </Form.Item>
       <Form.Item
         name="name"
-        label={<span style={{ fontWeight: 500, color: '#e4e6eb' }}>Название</span>}
+        label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>Название</span>}
         rules={[{ required: true, message: 'Обязательное поле' }]}
       >
         <Input placeholder="например, Кредитный договор" />
       </Form.Item>
       <Form.Item
         name="text_patterns"
-        label={<span style={{ fontWeight: 500, color: '#e4e6eb' }}>Текстовые паттерны</span>}
+        label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>Текстовые паттерны</span>}
         rules={[{ required: true, message: 'Нужен хотя бы один паттерн' }]}
       >
         <Select mode="tags" placeholder="Введите паттерн и нажмите Enter" />
       </Form.Item>
       <Form.Item
         name="min_pages"
-        label={<span style={{ fontWeight: 500, color: '#e4e6eb' }}>Мин. страниц</span>}
+        label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>Мин. страниц</span>}
         rules={[{ required: true, message: 'Обязательное поле' }]}
       >
         <InputNumber min={1} style={{ width: '100%' }} />
       </Form.Item>
       <Form.Item
         name="max_pages"
-        label={<span style={{ fontWeight: 500, color: '#e4e6eb' }}>Макс. страниц</span>}
+        label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>Макс. страниц</span>}
         rules={[{ required: true, message: 'Обязательное поле' }]}
       >
         <InputNumber min={1} style={{ width: '100%' }} />

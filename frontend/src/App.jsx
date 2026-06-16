@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ConfigProvider, Progress, Tag, Space } from 'antd';
+import { ConfigProvider, Tag, Space } from 'antd';
 import {
   CheckCircleFilled, ClockCircleFilled, SyncOutlined,
   CloseCircleFilled, ExclamationCircleFilled, InboxOutlined,
@@ -29,10 +29,14 @@ const App = () => {
   const hasJobs = p.total > 0;
   const isIdle = !hasJobs;
 
+  const doneFrac = p.total > 0 ? p.done / p.total : 0;
+  const reviewFrac = p.total > 0 ? p.needs_review / p.total : 0;
+  const failedFrac = p.total > 0 ? p.failed / p.total : 0;
+
   const theme = dark ? darkTheme : lightTheme;
   return (
     <ConfigProvider theme={theme}>
-      <div style={{ minHeight: '100vh' }} data-theme={dark ? 'dark' : 'light'}>
+      <div style={{ minHeight: '100vh', fontSize: 15 }} data-theme={dark ? 'dark' : 'light'}>
         <style>{`
           [data-theme] {
             --bg-card: #32353d;
@@ -86,34 +90,61 @@ const App = () => {
           [data-theme] * {
             transition: background 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out !important;
           }
+          [data-theme] .ant-table { font-size: 14px; }
+          [data-theme] .ant-list-item { font-size: 14px; }
+          [data-theme] .ant-card { font-size: 14px; }
+          [data-theme] .ant-tag { font-size: 12px; }
+          [data-theme] .ant-btn { font-size: 14px; }
         `}</style>
         <AppHeader activeTab={activeTab} onTabChange={setActiveTab} dark={dark} onToggleTheme={() => setDark(!dark)} />
 
         <div style={{
-          maxWidth: 1400, margin: '0 auto', padding: '12px 32px 0',
+          maxWidth: 1400, margin: '0 auto', padding: '16px 32px 0',
           opacity: isIdle ? 0.45 : 1,
           transition: 'opacity 0.3s',
         }}>
           <div style={{
             background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)',
-            padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+            padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
           }}>
-            <div style={{ flex: '1 1 200px', minWidth: 120 }}>
-              <Progress
-                percent={p.percent}
-                size="small"
-                strokeWidth={7}
-                strokeColor={isIdle ? 'var(--border)' : { from: '#2ea86b', to: '#d4943a' }}
-                trailColor="var(--bg-elevated)"
-                format={() => hasJobs ? `${p.completed}/${p.total}` : '0'}
-              />
+            <div style={{ flex: '1 1 200px', minWidth: 140 }}>
+              <div style={{
+                height: 10, borderRadius: 5, background: 'var(--bg-elevated)',
+                overflow: 'hidden', display: 'flex',
+              }}>
+                <div style={{ width: `${doneFrac * 100}%`, background: '#2ea86b', transition: 'width 0.3s' }} />
+                <div style={{ width: `${reviewFrac * 100}%`, background: '#d4943a', transition: 'width 0.3s' }} />
+                <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />
+              </div>
             </div>
-            <Space size={[8, 4]} wrap>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+              {hasJobs ? (
+                <span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{p.completed}</span>
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
+                  <span style={{ color: 'var(--text)' }}>{p.total}</span>
+                  {p.running + p.pending > 0 && (
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 400, marginLeft: 10 }}>
+                      ({p.running + p.pending} в обработке)
+                    </span>
+                  )}
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>-</span>
+                  <span style={{ color: '#2ea86b' }}>{p.done}</span>
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
+                  <span style={{ color: '#d4943a' }}>{p.needs_review}</span>
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
+                  <span style={{ color: '#d13a3a' }}>{p.failed}</span>
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 14 }}>Нет задач</span>
+              )}
+            </div>
+            <Space size={[10, 6]} wrap>
               {isIdle && (
                 <Tag icon={<InboxOutlined />} style={{
                   background: dark ? '#2f3137' : '#f0f0f0',
                   color: dark ? '#6b7078' : '#909090',
-                  border: 'none', borderRadius: 4,
+                  border: 'none', borderRadius: 4, fontSize: 13, padding: '2px 10px',
                 }}>
                   Ожидание задач
                 </Tag>
@@ -131,7 +162,7 @@ const App = () => {
           </div>
         </div>
 
-        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '28px 32px' }}>
           {activeTab === 'settings' ? <SettingsPage /> : <ReviewPage />}
         </div>
       </div>
@@ -140,7 +171,7 @@ const App = () => {
 };
 
 const buildTag = (Icon, color, bg, text, spin) => (
-  <Tag icon={<Icon spin={spin} />} style={{ background: bg, color, border: 'none', borderRadius: 4 }}>
+  <Tag icon={<Icon spin={spin} />} style={{ background: bg, color, border: 'none', borderRadius: 4, fontSize: 13, padding: '2px 10px' }}>
     {text}
   </Tag>
 );

@@ -130,7 +130,7 @@ async def get_job_detail(job_id: str, db: AsyncSession = Depends(get_db)):
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    type_ids = list(set(d.doc.document_type_id for d in (job.output_documents or [])))
+    type_ids = list(set(d.document_type_id for d in (job.output_documents or [])))
     doc_types_map = {}
     if type_ids:
         dt_result = await db.execute(select(DocumentType).where(DocumentType.id.in_(type_ids)))

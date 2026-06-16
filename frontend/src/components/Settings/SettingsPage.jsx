@@ -14,14 +14,7 @@ const SettingsPage = () => {
   return (
     <Row gutter={[24, 24]}>
       <Col xs={24} lg={16}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
-            Типы документов
-          </div>
-          <div style={{ padding: 0 }}>
-            <DocumentTypeList />
-          </div>
-        </div>
+        <DocumentTypeList />
       </Col>
       <Col xs={24} lg={8}>
         <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>

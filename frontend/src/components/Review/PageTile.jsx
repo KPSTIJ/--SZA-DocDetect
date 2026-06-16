@@ -3,10 +3,10 @@ import { Checkbox, Tooltip } from 'antd';
 import { getPagePreview } from '../../api/jobsApi';
 
 const statusConfig = {
-  undetected: { color: '#d13a3a', label: 'Undetected' },
-  invalid_length: { color: '#d4943a', label: 'Invalid length' },
-  low_vlm_confidence: { color: '#d4943a', label: 'Low confidence' },
-  default: { color: '#2ea86b', label: '' },
+  undetected: { color: '#d13a3a' },
+  invalid_length: { color: '#d4943a' },
+  low_vlm_confidence: { color: '#d4943a' },
+  default: { color: '#2ea86b' },
 };
 
 const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) => {
@@ -33,40 +33,50 @@ const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) =
     return () => observer.disconnect();
   }, [jobId, page.page_number]);
 
+  const edgeColor = isSelected ? 'var(--accent)' : hover ? '#ffffff' : null;
+
   return (
     <Tooltip title={`Стр. ${page.page_number + 1}${page.document_type_id ? ` · ${page.document_type_id}` : ''}`}>
-      <div ref={imgRef}
+      <div
+        ref={imgRef}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         onClick={() => onClickPreview?.(page.page_number)}
         style={{
-          position: 'relative', width: 120, height: 160,
-          border: isSelected ? '2px solid var(--accent)' : hover ? '2px solid #3dbf7d' : '1px solid var(--border)',
-          borderRadius: 8, cursor: 'pointer', background: 'var(--bg-card)', flexShrink: 0,
-          transition: 'border-color 0.15s, box-shadow 0.15s',
-          boxShadow: isSelected ? '0 0 0 3px rgba(46,168,107,0.2)' : hover ? '0 2px 6px rgba(0,0,0,0.3)' : 'none',
+          width: 150, height: 200, flexShrink: 0,
+          borderRadius: 8, cursor: 'pointer',
+          background: 'var(--bg-elevated)',
+          border: edgeColor ? `2px solid ${edgeColor}` : '1px solid var(--border)',
+          transition: 'border 0.12s, border-color 0.12s',
         }}
       >
-        <Checkbox checked={isSelected}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => { e.stopPropagation(); onToggleSelect?.(page.page_number); }}
-          style={{ position: 'absolute', top: 5, left: 5, opacity: hover || isSelected ? 1 : 0, zIndex: 2, transition: 'opacity 0.15s' }}
-        />
-        {imgSrc ? (
-          <img src={imgSrc} alt={`Page ${page.page_number}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
-            Загрузка...
+        <div style={{ width: '100%', height: '100%', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+          <Checkbox checked={isSelected}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(page.page_number); }}
+            style={{
+              position: 'absolute', top: 6, left: 6, opacity: hover || isSelected ? 1 : 0, zIndex: 2,
+              transition: 'opacity 0.15s', transform: 'scale(1.3)',
+            }}
+          />
+          {imgSrc ? (
+            <img src={imgSrc} alt={`Page ${page.page_number}`}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <div style={{
+              width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text-tertiary)', fontSize: 13,
+            }}>
+              Загрузка...
+            </div>
+          )}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, background: cfg.color,
+            color: '#fff', fontSize: 11, fontWeight: 600, padding: '3px 8px',
+            textAlign: 'center',
+          }}>
+            {page.page_number + 1}
           </div>
-        )}
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, background: cfg.color,
-          color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 6px',
-          textAlign: 'center', borderRadius: '0 0 6px 6px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span>{page.page_number + 1}</span>
-          <span style={{ opacity: 0.8 }}>{page.document_type_id || '?'}</span>
         </div>
       </div>
     </Tooltip>

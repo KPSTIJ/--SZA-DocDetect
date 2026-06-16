@@ -55,7 +55,7 @@ const AppHeader = ({ activeTab, onTabChange, dark, onToggleTheme }) => (
           { key: 'settings', label: <span style={tabBtnStyle(activeTab === 'settings')}><Settings /> Настройки</span> },
           { key: 'review', label: <span style={tabBtnStyle(activeTab === 'review')}><Review /> Разбор</span> },
         ]}
-        style={{ marginBottom: 0, flexShrink: 0 }}
+        style={{ marginBottom: 0, marginRight: 12, flexShrink: 0 }}
         tabBarStyle={{ marginBottom: 0, borderBottom: 'none', background: 'transparent', boxShadow: 'none' }}
         indicator={{ size: 0 }}
       />

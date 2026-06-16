@@ -1,18 +1,28 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 libsm6 libxrender1 libxext6 \
-    libgomp1 libgl1-mesa-glx \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y gcc libxcb1 libglib2.0-0 libsm6 libxrender1 libxext6 libgomp1 libgl1 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Core dependencies
+RUN pip install --no-cache-dir \
+    fastapi uvicorn gunicorn \
+    sqlalchemy aiosqlite alembic \
+    pydantic-settings pydantic \
+    pymupdf numpy Pillow httpx rapidfuzz \
+    python-multipart opencv-python-headless
+
+# ML dependencies (CPU-only)
+RUN pip install --no-cache-dir paddlepaddle==3.0.0 paddleocr==3.6.0
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir doclayout-yolo
 
 COPY backend/ /app/backend/
-COPY .env.example .env
+COPY .env.example /app/.env
 
 RUN mkdir -p /app/data/input /app/data/output /app/data/temp
+
+ENV FLAGS_use_mkldnn=0
+ENV OLLAMA_BASE_URL=http://192.168.51.247:11434
 
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
