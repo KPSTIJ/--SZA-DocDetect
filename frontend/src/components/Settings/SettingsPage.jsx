@@ -1,15 +1,8 @@
 import React, { useEffect } from 'react';
-import { Row, Col, Card } from 'antd';
+import { Row, Col } from 'antd';
 import DocumentTypeList from './DocumentTypeList';
 import UploadSection from './UploadSection';
 import useConfigStore from '../../store/configStore';
-
-const sectionStyle = {
-  background: '#fff',
-  borderRadius: 10,
-  border: '1px solid #e8efe9',
-  overflow: 'hidden',
-};
 
 const SettingsPage = () => {
   const fetchDocumentTypes = useConfigStore((s) => s.fetchDocumentTypes);
@@ -21,15 +14,8 @@ const SettingsPage = () => {
   return (
     <Row gutter={[24, 24]}>
       <Col xs={24} lg={16}>
-        <div style={sectionStyle}>
-          <div style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid #e8efe9',
-            background: '#f8fbf9',
-            fontWeight: 600,
-            fontSize: 15,
-            color: '#0d4a30',
-          }}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
             Типы документов
           </div>
           <div style={{ padding: 0 }}>
@@ -38,15 +24,8 @@ const SettingsPage = () => {
         </div>
       </Col>
       <Col xs={24} lg={8}>
-        <div style={sectionStyle}>
-          <div style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid #e8efe9',
-            background: '#f8fbf9',
-            fontWeight: 600,
-            fontSize: 15,
-            color: '#0d4a30',
-          }}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
             Загрузка и обработка
           </div>
           <div style={{ padding: 24 }}>

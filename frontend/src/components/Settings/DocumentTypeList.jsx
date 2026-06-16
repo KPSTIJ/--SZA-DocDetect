@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Table, Button, Tag, Space, Modal, message, Tooltip, Popconfirm } from 'antd';
+import { Table, Button, Tag, Space, Modal, message, Tooltip } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import DocumentTypeForm from './DocumentTypeForm';
 import useConfigStore from '../../store/configStore';
@@ -18,7 +18,11 @@ const DocumentTypeList = () => {
     Modal.confirm({
       title: 'Удалить тип документа?',
       icon: null,
-      content: <div style={{ color: '#5a6a62' }}>Вы уверены, что хотите удалить <strong>{id}</strong>?</div>,
+      content: (
+        <div style={{ color: 'var(--text-secondary)' }}>
+          Вы уверены, что хотите удалить <strong style={{ color: 'var(--text)' }}>{id}</strong>?
+        </div>
+      ),
       okText: 'Удалить',
       okButtonProps: { danger: true },
       onOk: () => deleteDocumentType(id),
@@ -31,13 +35,13 @@ const DocumentTypeList = () => {
       dataIndex: 'id',
       key: 'id',
       width: 160,
-      render: (id) => <code style={{ color: '#1a6b4a', fontSize: 13 }}>{id}</code>,
+      render: (id) => <code style={{ color: 'var(--accent)', fontSize: 13 }}>{id}</code>,
     },
     {
       title: 'Название',
       dataIndex: 'name',
       key: 'name',
-      render: (name) => <span style={{ fontWeight: 500 }}>{name}</span>,
+      render: (name) => <span style={{ fontWeight: 500, color: 'var(--text)' }}>{name}</span>,
     },
     {
       title: 'Паттерны',
@@ -46,7 +50,12 @@ const DocumentTypeList = () => {
       render: (patterns) => (
         <Space size={4} wrap>
           {patterns?.map((p) => (
-            <Tag key={p} style={{ background: '#e6f2ed', border: '1px solid #b8d4c6', color: '#0d4a30', borderRadius: 4, fontSize: 12 }}>{p}</Tag>
+            <Tag key={p} style={{
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-border)',
+              color: 'var(--accent)', borderRadius: 4, fontSize: 12,
+            }}>
+              {p}
+            </Tag>
           ))}
         </Space>
       ),
@@ -56,7 +65,9 @@ const DocumentTypeList = () => {
       key: 'pages',
       width: 100,
       render: (_, record) => (
-        <span style={{ color: '#5a6a62', fontSize: 13 }}>{record.min_pages}–{record.max_pages}</span>
+        <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          {record.min_pages}–{record.max_pages}
+        </span>
       ),
     },
     {
@@ -66,7 +77,7 @@ const DocumentTypeList = () => {
       render: (_, record) => (
         <Space>
           <Tooltip title="Редактировать">
-            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)} style={{ color: '#4a8c70' }} />
+            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)} style={{ color: 'var(--text-secondary)' }} />
           </Tooltip>
           <Tooltip title="Удалить">
             <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
@@ -79,12 +90,7 @@ const DocumentTypeList = () => {
   return (
     <>
       <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => { setEditing(null); setModalOpen(true); }}
-          style={{ borderRadius: 6 }}
-        >
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalOpen(true); }} style={{ borderRadius: 6 }}>
           Добавить тип документа
         </Button>
       </div>
@@ -94,10 +100,10 @@ const DocumentTypeList = () => {
         rowKey="id"
         loading={loading}
         pagination={false}
-        style={{ borderTop: '1px solid #e8efe9' }}
+        style={{ borderTop: '1px solid var(--border)' }}
       />
       <Modal
-        title={<span style={{ color: '#0d4a30', fontWeight: 600 }}>{editing ? 'Редактировать тип документа' : 'Новый тип документа'}</span>}
+        title={<span style={{ color: 'var(--text)', fontWeight: 600 }}>{editing ? 'Редактировать тип документа' : 'Новый тип документа'}</span>}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         footer={null}
