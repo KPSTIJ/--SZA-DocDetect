@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Row, Col, Button, Tooltip, Space } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
@@ -14,14 +14,14 @@ const getJobColor = (job) => {
 };
 
 const FILTERS = [
-  { key: 'errors', label: 'Нужна проверка', color: '#d4943a' },
   { key: 'all', label: 'Все', color: 'var(--text-secondary)' },
+  { key: 'errors', label: 'Нужна проверка', color: '#d4943a' },
   { key: 'failed', label: 'Ошибка', color: '#d13a3a' },
   { key: 'ok', label: 'Корректные', color: '#2ea86b' },
 ];
 
 const ReviewPage = () => {
-  const { reviewJobs, fetchReviewJobs, startPolling, stopPolling } = useJobStore();
+  const { reviewJobs, fetchReviewJobs, startPolling, stopPolling, openPdfViewer } = useJobStore();
 
   useEffect(() => {
     fetchReviewJobs();
@@ -29,7 +29,7 @@ const ReviewPage = () => {
     return () => stopPolling();
   }, [fetchReviewJobs, startPolling, stopPolling]);
 
-  const [filterTab, setFilterTab] = useState('errors');
+  const [filterTab, setFilterTab] = useState('all');
   const [dossierModal, setDossierModal] = useState({ open: false, job: null });
 
   const allJobs = [
@@ -38,28 +38,29 @@ const ReviewPage = () => {
     ...(reviewJobs.failed || []),
   ];
 
-  const stats = {
-    needs_review_count: allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed').length,
-    done_count: allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length,
-    failed_count: allJobs.filter(j => j.status === 'failed').length,
-    total_pages: allJobs.reduce((s, j) => s + (j.total_pages || 0), 0),
-    total_error_pages: allJobs.reduce((s, j) => s + (j.error_pages || 0), 0),
-  };
+  const countByFilter = useMemo(() => {
+    const all = allJobs.length;
+    const errors = allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed').length;
+    const failed = allJobs.filter(j => j.status === 'failed').length;
+    const ok = allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
+    return { all, errors, failed, ok };
+  }, [allJobs]);
 
-  const filteredJobs = filterTab === 'all' ? allJobs
-    : filterTab === 'errors' ? allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed')
-    : filterTab === 'failed' ? allJobs.filter(j => j.status === 'failed')
-    : filterTab === 'ok' ? allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0)
-    : allJobs;
+  const filteredJobs = (() => {
+    if (filterTab === 'errors') return allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed');
+    if (filterTab === 'failed') return allJobs.filter(j => j.status === 'failed');
+    if (filterTab === 'ok') return allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0);
+    return allJobs;
+  })();
 
   return (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {[
-          { label: 'Требуют проверки', value: stats.needs_review_count, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
-          { label: 'Готово', value: stats.done_count, icon: <CheckCircleOutlined />, color: 'var(--accent)' },
-          { label: 'Ошибки', value: stats.failed_count, icon: <CloseCircleOutlined />, color: '#d13a3a' },
-          { label: 'Всего страниц', value: stats.total_pages, icon: <div style={{ fontSize: 18, fontWeight: 700, lineHeight: '22px' }}>Σ</div>, color: 'var(--text-secondary)' },
+          { label: 'Требуют проверки', value: countByFilter.errors, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
+          { label: 'Готово', value: countByFilter.ok, icon: <CheckCircleOutlined />, color: 'var(--accent)' },
+          { label: 'Ошибки', value: countByFilter.failed, icon: <CloseCircleOutlined />, color: '#d13a3a' },
+          { label: 'Загружено', value: allJobs.length, icon: <div style={{ fontSize: 18, fontWeight: 700, lineHeight: '22px' }}>∑</div>, color: 'var(--text-secondary)' },
         ].map((item) => (
           <Col key={item.label} xs={12} sm={6}>
             <Card style={{ borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)' }} styles={{ body: { padding: '16px 20px' } }}>
@@ -104,7 +105,7 @@ const ReviewPage = () => {
                     background: active ? (f.color + '18') : 'var(--bg-elevated)',
                   }}
                 >
-                  {f.label}
+                  {f.label} <span style={{ marginLeft: 4, opacity: 0.7 }}>({countByFilter[f.key]})</span>
                 </Button>
               );
             })}
@@ -146,7 +147,7 @@ const ReviewPage = () => {
                         <div style={{ marginTop: 'auto' }} onClick={e => e.stopPropagation()}>
                           <Tooltip title="Открыть исходный PDF">
                             <Button size="small" icon={<EyeOutlined />}
-                              href={`/api/jobs/${jid}/source`} target="_blank"
+                              onClick={(e) => { e.stopPropagation(); openPdfViewer(jid, job.source_filename); }}
                               style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', background: 'var(--bg-elevated)' }} />
                           </Tooltip>
                         </div>

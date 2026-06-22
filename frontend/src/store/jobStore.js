@@ -7,6 +7,7 @@ const useJobStore = create((set, get) => ({
   loading: false,
   pollingInterval: null,
   selectedPages: {},
+  pdfViewer: { open: false, jobId: null, filename: null },
 
   getProgress: () => {
     const jobs = get().jobs;
@@ -96,6 +97,14 @@ const useJobStore = create((set, get) => ({
   confirmJob: async (jobId) => {
     await jobsApi.confirmReview(jobId);
     await get().fetchReviewJobs();
+  },
+
+  openPdfViewer: (jobId, filename) => {
+    set({ pdfViewer: { open: true, jobId, filename } });
+  },
+
+  closePdfViewer: () => {
+    set({ pdfViewer: { open: false, jobId: null, filename: null } });
   },
 }));
 

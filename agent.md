@@ -58,6 +58,7 @@ project/
 │       ├── api/             # client.js, configApi.js, jobsApi.js
 │       ├── store/           # configStore.js, jobStore.js
 │       └── components/
+│           ├── PdfViewerPanel.jsx  # Просмотрщик исходного PDF
 │           ├── Settings/    # SettingsPage, DocumentTypeList, DocumentTypeForm, UploadSection
 │           ├── Review/      # ReviewPage, DossierModal, PageTile, FloatingAssignToolbar
 │           └── Layout/      # AppHeader, Icons
@@ -65,7 +66,7 @@ project/
 
 ---
 
-## Статус реализации (все 17 подзадач выполнены + доработки UI)
+## Статус реализации (все 17 подзадач + дополнительные фичи)
 
 ### Что реализовано:
 
@@ -97,6 +98,16 @@ project/
 - Визуальный редизайн UI, перевод на русский
 - Inline JSON-парсинг в VLM-модуле
 
+### PdfViewerPanel — просмотрщик исходного PDF
+
+- Фиксированная панель справа, ширина по пропорциям A4: `(100vh − 100px) × 210 / 297 + 40px`
+- Одна страница за раз, `objectFit: contain`, `maxHeight: 100%`
+- Навигация: стрелки клавиатуры ←/→ и скролл колёсиком по изображению
+- Кнопки: «Скачать PDF», «Закрыть»
+- При открытии основной интерфейс сдвигается влево через `body.paddingRight`
+- Модальные окна (Ant Design Modal) сдвигаются через `body[data-panel-open] .ant-modal-wrap`
+- `z-index: 1100` — поверх стандартных модалок
+
 ### Исправленные баги:
 
 | Баг | Фикс |
@@ -105,17 +116,21 @@ project/
 | VLM `NameError: name 'logger' not defined` | Добавлен `import logging` + `logger` |
 | VLM возвращал пустой ответ от Ollama | Resize изображений до max 1024px |
 | `GET /api/jobs/{id}` — 500 `'OutputDocument' object has no attribute 'doc'` | `d.doc.document_type_id` → `d.document_type_id` |
+| `ReferenceError: Cannot access 'pdfViewer' before initialization` | Перенос `const pdfViewer` выше `useEffect` (Temporal Dead Zone) |
+| `stats is not defined` в ReviewPage | Замена `stats.*` на `countByFilter.*` и `allJobs.length` |
 
 ### Доработки Frontend:
 
-- **ProgressBar**: 3-цветный (зелёный/оранжевый/красный) счётчик `##/## - ## / ## / ##`
-- **ReviewPage**: сетка 4 колонки, цветные полоски статуса, фильтры в шапке, `DossierModal` по клику
-- **DossierModal**: отдельное окно для работы с досье, группировка страниц по типу, нижний floating-бар для массового назначения, превью с навигацией
-- **PageTile**: белая рамка при наведении, зелёная рамка + glow 6px при выборе, 150×200px, иконка-документ с pulse-анимацией
-- **UploadSection**: русские статусы (Ожидает/В обработке/Готово/Ошибка/На проверке)
-- **DocumentTypeList**: кнопка «Добавить» в шапке
-- **App**: увеличенные шрифты и отступы
-- **Тёмная тема**: корректное отображение всех элементов
+- **PdfViewerPanel** — просмотрщик неразрезанного PDF в правой панели с A4-пропорциями, навигацией и скачиванием
+- **DossierModal** — тип документа сверху превью, разделители между группами типов, увеличен `marginBottom` и `padding`
+- **PageTile**: зелёная рамка + glow 6px при выборе, 150×200px, иконка-документ с pulse-анимацией
+- **ReviewPage**: фильтр «Все» первым, счётчики на кнопках фильтров вместо баджа у «Досье»
+- **UploadSection**: русские статусы (Ожидает/В обработке/Готово/Ошибка/На проверке), блокировка без проекта
+- **DocumentTypeList**: кнопка «Добавить» в шапке, проект в Select
+- **AppHeader**: кастомные кнопки вместо Tabs, одинаковые отступы
+- **Скроллбар**: кастомный `::-webkit-scrollbar` для тёмной (#5a5e66) и светлой (#d0d0d0) темы
+- **Select**: цвет текста выбранного значения `var(--text)` и плейсхолдера `var(--text-tertiary)` для тёмной темы
+- **Тёмная тема**: корректное отображение всех элементов, CSS-переменные
 
 ---
 
@@ -160,6 +175,7 @@ docker compose -f docker-compose.deploy.yml up -d
 - Полный pipeline на Ubuntu с CUDA + GPU (PaddleOCR GPU, DocLayoutYOLO)
 - VLM с реальными отсканированными документами (не сгенерированными PDF)
 - Обработка битых PDF, пустых PDF, не-PDF файлов
+- PdfViewerPanel с большими PDF (50+ страниц)
 
 ### Улучшения API:
 - `POST /start-batch` при already running → 409 Conflict (сейчас 400)

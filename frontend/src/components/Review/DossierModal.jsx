@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Modal, Button, Space, Select, Tooltip, Divider } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined,
@@ -26,7 +26,7 @@ const groupPagesByType = (pages) => {
 };
 
 const DossierModal = ({ open, job, onClose }) => {
-  const { selectedPages, togglePageSelection, patchPages, confirmJob, clearSelection } = useJobStore();
+  const { selectedPages, togglePageSelection, patchPages, confirmJob, clearSelection, openPdfViewer } = useJobStore();
   const { documentTypes } = useConfigStore();
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +60,7 @@ const DossierModal = ({ open, job, onClose }) => {
   const prevPage = pages[previewIndex - 1];
   const nextPage = pages[previewIndex + 1];
 
+  const previewNavRef = useRef((_) => {});
   const handlePreviewNav = (delta) => {
     const newIdx = previewIndex + delta;
     if (newIdx >= 0 && newIdx < pages.length) {
@@ -68,6 +69,22 @@ const DossierModal = ({ open, job, onClose }) => {
       setPreviewModal(prev => ({ ...prev, pageNum: p.page_number }));
     }
   };
+  previewNavRef.current = handlePreviewNav;
+
+  useEffect(() => {
+    if (!previewModal.open) return;
+    const handler = (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') previewNavRef.current(-1);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') previewNavRef.current(1);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [previewModal.open]);
+
+  const handleWheel = useCallback((e) => {
+    if (e.deltaY < 0) previewNavRef.current(-1);
+    if (e.deltaY > 0) previewNavRef.current(1);
+  }, []);
 
   const handlePreviewTypeChange = async (newTypeId) => {
     if (!jid || previewModal.pageNum == null) return;
@@ -121,8 +138,8 @@ const DossierModal = ({ open, job, onClose }) => {
               </span>
               <Tooltip title="Открыть исходный PDF">
                 <Button size="small" icon={<EyeOutlined />}
-                  href={jid ? `/api/jobs/${jid}/source` : '#'} target="_blank"
-                  style={{ color: 'var(--text-secondary)', fontSize: 13, border: '1px solid var(--border)', borderRadius: 6, padding: '2px 12px', background: 'var(--bg-elevated)' }}>
+                  onClick={() => { if (jid) openPdfViewer(jid, job?.source_filename); }}
+                  style={{ color: 'var(--accent)', fontSize: 13, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '2px 12px', background: 'var(--accent-bg)' }}>
                   Открыть исходный PDF
                 </Button>
               </Tooltip>
@@ -153,23 +170,26 @@ const DossierModal = ({ open, job, onClose }) => {
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#d13a3a', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <ExclamationCircleOutlined /> Страницы с ошибками ({errorPages.length})
                   </div>
-                  {errorGroups.map((group) => (
-                    <div key={group.typeId} style={{ marginBottom: 20 }}>
-                      <div style={{ display: 'flex', gap: 18, overflowX: 'auto', padding: '6px 10px 6px', minHeight: 220 }}>
-                        {group.pages.map((page) => (
-                          <PageTile key={page.page_number} jobId={jid} page={page}
-                            isSelected={selectedSet.has(page.page_number)}
-                            onToggleSelect={(pn) => togglePageSelection(jid, pn)}
-                            onClickPreview={(pn) => {
-                              setPreviewType(page.document_type_id || null);
-                              setPreviewModal({ open: true, pageNum: pn });
-                            }} />
-                        ))}
+                  {errorGroups.map((group, gi) => (
+                    <React.Fragment key={group.typeId}>
+                      {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
+                      <div style={{ marginBottom: gi === errorGroups.length - 1 ? 0 : 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#d13a3a', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                          {group.typeName} · {group.pages.length} стр.
+                        </div>
+                        <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
+                          {group.pages.map((page) => (
+                            <PageTile key={page.page_number} jobId={jid} page={page}
+                              isSelected={selectedSet.has(page.page_number)}
+                              onToggleSelect={(pn) => togglePageSelection(jid, pn)}
+                              onClickPreview={(pn) => {
+                                setPreviewType(page.document_type_id || null);
+                                setPreviewModal({ open: true, pageNum: pn });
+                              }} />
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-tertiary)', marginTop: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                        {group.typeName} · {group.pages.length} стр.
-                      </div>
-                    </div>
+                    </React.Fragment>
                   ))}
                 </div>
               )}
@@ -181,23 +201,26 @@ const DossierModal = ({ open, job, onClose }) => {
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CheckCircleOutlined /> Корректные страницы ({okPages.length})
                   </div>
-                  {okGroups.map((group) => (
-                    <div key={group.typeId} style={{ marginBottom: 20 }}>
-                      <div style={{ display: 'flex', gap: 18, overflowX: 'auto', padding: '6px 10px 6px', minHeight: 220 }}>
-                        {group.pages.map((page) => (
-                          <PageTile key={page.page_number} jobId={jid} page={page}
-                            isSelected={selectedSet.has(page.page_number)}
-                            onToggleSelect={(pn) => togglePageSelection(jid, pn)}
-                            onClickPreview={(pn) => {
-                              setPreviewType(page.document_type_id || null);
-                              setPreviewModal({ open: true, pageNum: pn });
-                            }} />
-                        ))}
+                  {okGroups.map((group, gi) => (
+                    <React.Fragment key={group.typeId}>
+                      {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
+                      <div style={{ marginBottom: gi === okGroups.length - 1 ? 0 : 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                          {group.typeName} · {group.pages.length} стр.
+                        </div>
+                        <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
+                          {group.pages.map((page) => (
+                            <PageTile key={page.page_number} jobId={jid} page={page}
+                              isSelected={selectedSet.has(page.page_number)}
+                              onToggleSelect={(pn) => togglePageSelection(jid, pn)}
+                              onClickPreview={(pn) => {
+                                setPreviewType(page.document_type_id || null);
+                                setPreviewModal({ open: true, pageNum: pn });
+                              }} />
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-tertiary)', marginTop: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                        {group.typeName} · {group.pages.length} стр.
-                      </div>
-                    </div>
+                    </React.Fragment>
                   ))}
                 </div>
               )}
@@ -268,8 +291,8 @@ const DossierModal = ({ open, job, onClose }) => {
               </span>
               <Tooltip title="Открыть исходный PDF">
                 <Button size="small" icon={<EyeOutlined />}
-                  href={jid ? `/api/jobs/${jid}/source` : '#'} target="_blank"
-                  style={{ color: 'var(--text-secondary)', fontSize: 13, marginLeft: 8, border: '1px solid var(--border)', borderRadius: 6, padding: '2px 12px', background: 'var(--bg-elevated)' }}>
+                  onClick={() => { if (jid) openPdfViewer(jid, job?.source_filename); }}
+                  style={{ color: 'var(--accent)', fontSize: 13, marginLeft: 8, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '2px 12px', background: 'var(--accent-bg)' }}>
                   Открыть исходный PDF
                 </Button>
               </Tooltip>
@@ -279,13 +302,15 @@ const DossierModal = ({ open, job, onClose }) => {
         open={previewModal.open}
         onCancel={() => setPreviewModal({ open: false, pageNum: null })}
         footer={null}
-        width={1000}
+        width={850}
+        centered
         styles={{ body: { padding: 0 } }}
       >
         {jid && previewModal.pageNum != null && (
-          <div>
+          <div onWheel={handleWheel}>
             <img src={`/api/jobs/${jid}/page/${previewModal.pageNum}/preview`}
-              alt={`Page ${previewModal.pageNum}`} style={{ width: '100%', display: 'block' }} />
+              alt={`Page ${previewModal.pageNum}`}
+              style={{ width: '100%', display: 'block', maxHeight: '80vh', objectFit: 'contain' }} />
             <div style={{
               padding: '14px 24px', borderTop: '1px solid var(--border)',
               background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',

@@ -8,6 +8,7 @@ import { lightTheme, darkTheme } from './theme';
 import SettingsPage from './components/Settings/SettingsPage';
 import ReviewPage from './components/Review/ReviewPage';
 import AppHeader from './components/Layout/AppHeader';
+import PdfViewerPanel from './components/PdfViewerPanel';
 import useJobStore from './store/jobStore';
 
 const STORAGE_KEY = 'sza_theme';
@@ -20,11 +21,31 @@ const App = () => {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, dark ? 'dark' : 'light');
+    document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
   }, [dark]);
 
   const [activeTab, setActiveTab] = useState('settings');
   const jobs = useJobStore((s) => s.jobs);
   const getProgress = useJobStore((s) => s.getProgress);
+  const pdfViewer = useJobStore((s) => s.pdfViewer);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const calcWidth = () => Math.round((window.innerHeight - 100) * 210 / 297 + 40);
+    const w = pdfViewer.open ? `${calcWidth()}px` : '';
+    document.body.style.paddingRight = w;
+    document.body.style.setProperty('--panel-width', w);
+    if (pdfViewer.open) {
+      document.body.setAttribute('data-panel-open', '');
+    } else {
+      document.body.removeAttribute('data-panel-open');
+    }
+    return () => {
+      document.body.style.paddingRight = '';
+      document.body.style.removeProperty('--panel-width');
+      document.body.removeAttribute('data-panel-open');
+    };
+  }, [pdfViewer.open]);
   const p = getProgress();
   const hasJobs = p.total > 0;
   const isIdle = !hasJobs;
@@ -89,6 +110,41 @@ const App = () => {
           }
           [data-theme] * {
             transition: background 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out !important;
+          }
+          body[data-panel-open] .ant-modal-wrap {
+            padding-right: var(--panel-width, 660px);
+          }
+          body[data-theme]::-webkit-scrollbar,
+          body[data-theme] ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+          }
+          body[data-theme]::-webkit-scrollbar-track,
+          body[data-theme] ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          body[data-theme]::-webkit-scrollbar-thumb,
+          body[data-theme] ::-webkit-scrollbar-thumb {
+            background: #5a5e66;
+            border-radius: 4px;
+          }
+          body[data-theme]::-webkit-scrollbar-thumb:hover,
+          body[data-theme] ::-webkit-scrollbar-thumb:hover {
+            background: #6b7078;
+          }
+          body[data-theme="light"]::-webkit-scrollbar-thumb,
+          body[data-theme="light"] ::-webkit-scrollbar-thumb {
+            background: #d0d0d0;
+          }
+          body[data-theme="light"]::-webkit-scrollbar-thumb:hover,
+          body[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+            background: #b8b8b8;
+          }
+          [data-theme] .ant-select-selection-item {
+            color: var(--text) !important;
+          }
+          [data-theme] .ant-select-selection-placeholder {
+            color: var(--text-tertiary) !important;
           }
           [data-theme] .ant-table { font-size: 14px; }
           [data-theme] .ant-list-item { font-size: 14px; }
@@ -166,6 +222,8 @@ const App = () => {
           {activeTab === 'settings' ? <SettingsPage /> : <ReviewPage />}
         </div>
       </div>
+
+      <PdfViewerPanel />
     </ConfigProvider>
   );
 };

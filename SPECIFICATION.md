@@ -1833,3 +1833,6 @@ VITE_API_BASE_URL=/api
 | 15 | Тесты | `tests/unit/`, `tests/integration/` | `pytest tests/unit/ -v` всё зелёное |
 | 16 | Frontend стейт | Zustand сторы, polling | Статус задачи обновляется без перезагрузки |
 | 17 | Деплой | `Dockerfile`, `docker-compose.yml` | `docker compose up` — всё запускается |
+| 18 | **PdfViewerPanel** | Просмотрщик исходного PDF | Открыть PDF → панель справа, навигация, скачивание |
+| 19 | **Кастомный скроллбар** | `::-webkit-scrollbar` в App.jsx | Тёмная тема: `#5a5e66`, светлая: `#d0d0d0` |
+| 20 | **Сдвиг интерфейса** | `body.paddingRight` + `--panel-width` | Модалки сдвигаются вместе с контентом |
