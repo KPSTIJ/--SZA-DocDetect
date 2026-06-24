@@ -30,8 +30,16 @@ async def lifespan(app: FastAPI):
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
     engine = get_engine(_settings)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent / "alembic.ini"))
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("DB migrations applied")
+    except Exception as e:
+        logger.warning("Alembic migration failed, falling back to create_all: %s", e)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     app.state.engine = engine
     app.state.sessionmaker = get_sessionmaker(engine)

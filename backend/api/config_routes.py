@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +11,11 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 
 @router.get("/document-types", response_model=list[DocumentTypeResponse])
-async def list_document_types(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DocumentType).order_by(DocumentType.name))
+async def list_document_types(project_id: UUID | None = Query(None), db: AsyncSession = Depends(get_db)):
+    query = select(DocumentType).order_by(DocumentType.name)
+    if project_id:
+        query = query.where(DocumentType.project_id == project_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 

@@ -56,6 +56,9 @@ class CVModule:
             self.model = None
 
     def detect_layout(self, image: np.ndarray) -> list[LayoutBlock]:
+        if self.model is None:
+            logger.warning("CVModule: model not loaded, returning empty layout")
+            return []
         results = self.model.predict(
             image, imgsz=1024, conf=0.25,
             device="cpu", verbose=False,
@@ -81,17 +84,16 @@ class CVModule:
             x1, y1, x2, y2 = block.bbox
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
 
-            if block.label in self.STAMP_LABELS and cy > self.BOTTOM_ZONE_Y:
-                block_h = y2 - y1
-                block_w = x2 - x1
-                aspect = block_w / block_h if block_h > 0 else 0
-                if 0.7 < aspect < 1.4:
-                    patterns.has_stamp = True
-                else:
-                    patterns.has_signature = True
-
             if block.label in self.STAMP_LABELS:
-                if cx > self.TOP_RIGHT_X and cy < self.TOP_ZONE_Y:
+                if cy > self.BOTTOM_ZONE_Y:
+                    block_h = y2 - y1
+                    block_w = x2 - x1
+                    aspect = block_w / block_h if block_h > 0 else 0
+                    if 0.7 < aspect < 1.4:
+                        patterns.has_stamp = True
+                    else:
+                        patterns.has_signature = True
+                elif cx > self.TOP_RIGHT_X and cy < self.TOP_ZONE_Y:
                     block_h = y2 - y1
                     block_w = x2 - x1
                     if block_h > 0.05 and block_w > 0.05:

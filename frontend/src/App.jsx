@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ConfigProvider, Tag, Space } from 'antd';
-import {
-  CheckCircleFilled, ClockCircleFilled, SyncOutlined,
-  CloseCircleFilled, ExclamationCircleFilled, InboxOutlined,
-} from '@ant-design/icons';
+import { ConfigProvider, Tag } from 'antd';
+import { InboxOutlined } from '@ant-design/icons';
 import { lightTheme, darkTheme } from './theme';
 import SettingsPage from './components/Settings/SettingsPage';
 import ReviewPage from './components/Review/ReviewPage';
 import AppHeader from './components/Layout/AppHeader';
 import PdfViewerPanel from './components/PdfViewerPanel';
+
 import useJobStore from './store/jobStore';
+import useProjectStore from './store/projectStore';
 
 const STORAGE_KEY = 'sza_theme';
 
@@ -27,7 +26,22 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('settings');
   const jobs = useJobStore((s) => s.jobs);
   const getProgress = useJobStore((s) => s.getProgress);
+  const fetchJobs = useJobStore((s) => s.fetchJobs);
+  const startPolling = useJobStore((s) => s.startPolling);
+  const stopPolling = useJobStore((s) => s.stopPolling);
   const pdfViewer = useJobStore((s) => s.pdfViewer);
+  const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
+  const fetchProjects = useProjectStore((s) => s.fetchProjects);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  useEffect(() => {
+    fetchJobs();
+    startPolling();
+    return () => stopPolling();
+  }, [selectedProjectId, fetchJobs, startPolling, stopPolling]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -50,6 +64,8 @@ const App = () => {
   const hasJobs = p.total > 0;
   const isIdle = !hasJobs;
 
+  const pendingFrac = p.total > 0 ? p.pending / p.total : 0;
+  const runningFrac = p.total > 0 ? p.running / p.total : 0;
   const doneFrac = p.total > 0 ? p.done / p.total : 0;
   const reviewFrac = p.total > 0 ? p.needs_review / p.total : 0;
   const failedFrac = p.total > 0 ? p.failed / p.total : 0;
@@ -146,6 +162,12 @@ const App = () => {
           [data-theme] .ant-select-selection-placeholder {
             color: var(--text-tertiary) !important;
           }
+          [data-theme] .ant-select-arrow {
+            color: var(--text-tertiary) !important;
+          }
+          [data-theme] .ant-input::placeholder {
+            color: var(--text-tertiary) !important;
+          }
           [data-theme] .ant-table { font-size: 14px; }
           [data-theme] .ant-list-item { font-size: 14px; }
           [data-theme] .ant-card { font-size: 14px; }
@@ -155,8 +177,8 @@ const App = () => {
         <AppHeader activeTab={activeTab} onTabChange={setActiveTab} dark={dark} onToggleTheme={() => setDark(!dark)} />
 
         <div style={{
-          maxWidth: 1400, margin: '0 auto', padding: '16px 32px 0',
-          opacity: isIdle ? 0.45 : 1,
+          maxWidth: 1400, margin: '0 auto', padding: '16px 32px',
+          opacity: isIdle ? 0.7 : 1,
           transition: 'opacity 0.3s',
         }}>
           <div style={{
@@ -165,12 +187,14 @@ const App = () => {
           }}>
             <div style={{ flex: '1 1 200px', minWidth: 140 }}>
               <div style={{
-                height: 10, borderRadius: 5, background: 'var(--bg-elevated)',
+                height: 10, borderRadius: 5, background: 'var(--border)',
                 overflow: 'hidden', display: 'flex',
               }}>
-                <div style={{ width: `${doneFrac * 100}%`, background: '#2ea86b', transition: 'width 0.3s' }} />
-                <div style={{ width: `${reviewFrac * 100}%`, background: '#d4943a', transition: 'width 0.3s' }} />
-                <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />
+                {pendingFrac > 0 && <div style={{ width: `${pendingFrac * 100}%`, background: '#9ca0a8', transition: 'width 0.3s' }} />}
+                {runningFrac > 0 && <div style={{ width: `${runningFrac * 100}%`, background: '#4a9eff', transition: 'width 0.3s' }} />}
+                {doneFrac > 0 && <div style={{ width: `${doneFrac * 100}%`, background: '#2ea86b', transition: 'width 0.3s' }} />}
+                {reviewFrac > 0 && <div style={{ width: `${reviewFrac * 100}%`, background: '#d4943a', transition: 'width 0.3s' }} />}
+                {failedFrac > 0 && <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />}
               </div>
             </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -179,46 +203,36 @@ const App = () => {
                   <span style={{ color: 'var(--text-secondary)' }}>{p.completed}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: 'var(--text)' }}>{p.total}</span>
-                  {p.running + p.pending > 0 && (
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 400, marginLeft: 10 }}>
-                      ({p.running + p.pending} в обработке)
-                    </span>
-                  )}
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>-</span>
+                  <span style={{ color: '#9ca0a8' }}>{p.pending}</span>
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
+                  <span style={{ color: '#4a9eff' }}>{p.running}</span>
+                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: '#2ea86b' }}>{p.done}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: '#d4943a' }}>{p.needs_review}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: '#d13a3a' }}>{p.failed}</span>
                 </span>
-              ) : (
+              ) : selectedProjectId ? (
                 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 14 }}>Нет задач</span>
+              ) : (
+                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 14 }}>Выберите проект</span>
               )}
             </div>
-            <Space size={[10, 6]} wrap>
-              {isIdle && (
-                <Tag icon={<InboxOutlined />} style={{
-                  background: dark ? '#2f3137' : '#f0f0f0',
-                  color: dark ? '#6b7078' : '#909090',
-                  border: 'none', borderRadius: 4, fontSize: 13, padding: '2px 10px',
-                }}>
-                  Ожидание задач
-                </Tag>
-              )}
-              {!isIdle && (
-                <>
-                  {p.pending > 0 && buildTag(ClockCircleFilled, '#9ca0a8', 'rgba(108,117,125,0.15)', `${p.pending} в очереди`)}
-                  {p.running > 0 && buildTag(SyncOutlined, '#2ea86b', 'rgba(46,168,107,0.15)', `${p.running} в обработке`, true)}
-                  {p.done > 0 && buildTag(CheckCircleFilled, '#2ea86b', 'rgba(46,168,107,0.15)', `${p.done} готово`)}
-                  {p.needs_review > 0 && buildTag(ExclamationCircleFilled, '#d4943a', 'rgba(212,148,58,0.15)', `${p.needs_review} на проверку`)}
-                  {p.failed > 0 && buildTag(CloseCircleFilled, '#d13a3a', 'rgba(209,58,58,0.15)', `${p.failed} ошибок`)}
-                </>
-              )}
-            </Space>
+            {isIdle && (
+              <Tag icon={<InboxOutlined />} style={{
+                background: dark ? '#2f3137' : '#f0f0f0',
+                color: dark ? '#6b7078' : '#909090',
+                border: 'none', borderRadius: 4, fontSize: 13, padding: '2px 10px',
+              }}>
+                Ожидание задач
+              </Tag>
+            )}
           </div>
         </div>
 
-        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '28px 32px' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 32px 28px' }}>
           {activeTab === 'settings' ? <SettingsPage /> : <ReviewPage />}
         </div>
       </div>
@@ -227,11 +241,5 @@ const App = () => {
     </ConfigProvider>
   );
 };
-
-const buildTag = (Icon, color, bg, text, spin) => (
-  <Tag icon={<Icon spin={spin} />} style={{ background: bg, color, border: 'none', borderRadius: 4, fontSize: 13, padding: '2px 10px' }}>
-    {text}
-  </Tag>
-);
 
 export default App;

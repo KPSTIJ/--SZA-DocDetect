@@ -1,16 +1,11 @@
-import uuid
-from fastapi import APIRouter, Depends, HTTPException
+import os
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-def _parse_job_id(job_id: str) -> uuid.UUID:
-    try:
-        return uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid job ID format")
-
+from backend.api.utils import parse_job_id
 from backend.database import get_db
 from backend.models.db_models import ProcessingJob, PageResult, OutputDocument, DocumentType
 from backend.models.schemas import (
@@ -22,12 +17,17 @@ router = APIRouter(prefix="/review", tags=["review"])
 
 
 @router.get("/jobs", response_model=ReviewJobsResponse)
-async def list_review_jobs(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(ProcessingJob)
-        .options(selectinload(ProcessingJob.page_results))
-        .order_by(ProcessingJob.created_at.desc())
-    )
+async def list_review_jobs(
+    project_id: UUID | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results))
+    if project_id:
+        query = query.where(ProcessingJob.project_id == project_id)
+    query = query.order_by(ProcessingJob.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
     all_jobs = result.scalars().all()
     needs_review = []
     done_jobs = []
@@ -40,6 +40,8 @@ async def list_review_jobs(db: AsyncSession = Depends(get_db)):
         total_error += sum(1 for p in pages if p.error_code is not None)
         js = JobSummary(
             job_id=str(job.id),
+            project_id=job.project_id,
+            batch_id=job.batch_id,
             source_filename=job.source_filename,
             status=job.status,
             total_pages=len(pages),
@@ -70,13 +72,13 @@ async def list_review_jobs(db: AsyncSession = Depends(get_db)):
 
 @router.patch("/jobs/{job_id}/pages", status_code=200)
 async def patch_job_pages(job_id: str, data: ReviewPatchRequest, db: AsyncSession = Depends(get_db)):
-    job = await db.get(ProcessingJob, _parse_job_id(job_id))
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     for item in data.assignments:
         result = await db.execute(
             select(PageResult).where(
-                PageResult.job_id == _parse_job_id(job_id),
+                PageResult.job_id == parse_job_id(job_id),
                 PageResult.page_number == item.page_number,
             )
         )
@@ -93,7 +95,7 @@ async def patch_job_pages(job_id: str, data: ReviewPatchRequest, db: AsyncSessio
 
 @router.post("/jobs/{job_id}/confirm", response_model=ReviewConfirmResponse)
 async def confirm_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    job = await db.get(ProcessingJob, _parse_job_id(job_id))
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     from backend.core.orchestrator import DocumentOrchestrator
@@ -114,6 +116,7 @@ async def confirm_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
     result_docs = []
     for doc in output_docs:
+        output_filename = os.path.basename(doc.output_path) if doc.output_path else None
         result_docs.append(OutputDocumentResponse(
             id=doc.id,
             document_type_id=doc.document_type_id,
@@ -123,6 +126,7 @@ async def confirm_job(job_id: str, db: AsyncSession = Depends(get_db)):
             end_page=doc.end_page,
             page_count=doc.end_page - doc.start_page + 1,
             output_path=doc.output_path,
+            output_filename=output_filename,
             status=doc.status,
         ))
     return ReviewConfirmResponse(

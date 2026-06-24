@@ -92,7 +92,20 @@ project/
 
 ### Дополнительно сделано:
 
-- `main.py` — глобальная точка входа
+- **Система проектов** — `Project` модель БД, CRUD API, ProjectBar в UI
+- **Scope по проекту** — DocumentType и ProcessingJob привязаны к проекту через `project_id`
+- **Alembic миграции** — единая миграция всех таблиц, авто-применение при старте (`alembic upgrade head` в lifespan)
+- **batch_id** — группировка загрузок (пачка PDF → один batch_id)
+- **DELETE /api/jobs/{id}** — удаление загрузки с очисткой файлов на диске
+- **Non-blocking оркестратор** — синхронные ML-операции (OCR, CV, fitz) вынесены в `asyncio.to_thread()`
+- **TextLayer на всех страницах** — титульники ищутся даже на страницах с коротким текстом (<50 символов)
+- **invalid_length не теряет тип** — страницы с невалидной длиной сегмента сохраняют свой тип от TextLayer
+- **Фильтры на странице «Разбор»** — по проекту, по загрузке (batch), поиск по имени файла
+- **ProgressBar** — 5 сегментов (pending/running/done/needs_review/failed)
+- **selectedProjectId в localStorage** — сохраняется между перезагрузками страницы
+- **Кнопка удаления загрузки** — на каждой карточке досье
+- **Обработка ошибок API** — читаемые сообщения об ошибках (Pydantic validation → человеческий текст)
+- `python main.py db-migrate` — ручное применение миграций
 - `python main.py dev` — одновременный запуск бэкенда + фронтенда
 - `.env` с настройками Ollama (http://192.168.51.247:11434)
 - Визуальный редизайн UI, перевод на русский
@@ -118,18 +131,26 @@ project/
 | `GET /api/jobs/{id}` — 500 `'OutputDocument' object has no attribute 'doc'` | `d.doc.document_type_id` → `d.document_type_id` |
 | `ReferenceError: Cannot access 'pdfViewer' before initialization` | Перенос `const pdfViewer` выше `useEffect` (Temporal Dead Zone) |
 | `stats is not defined` в ReviewPage | Замена `stats.*` на `countByFilter.*` и `allJobs.length` |
+| Кнопка «Запустить» висела при ошибке | `try/finally` в `uploadFiles`/`startBatch` |
+| React crash при Pydantic-ошибке | `getErrMsg()` — извлекает текст из любого формата |
+| 422 при загрузке `batch_id` | UUID генерация с полифиллом для старых браузеров |
+| Акцепт приклеивался к КД | TextLayer теперь ищет паттерны на всех страницах, включая короткий текст |
+| `invalid_length` стирал тип | Страницы с `invalid_length` сохраняют тип от TextLayer (не идут в Fusion) |
+| ML-операции блокировали event loop | Синхронные вызовы обёрнуты в `asyncio.to_thread()` |
 
 ### Доработки Frontend:
 
+- **ProjectBar** — выбор/создание проекта, интеграция с SettingsPage
+- **Фильтры «Разбор»** — проект / загрузка (batch) / поиск по файлу
+- **Прогрессбар** — 5 цветных сегментов: pending (серый), running (синий), done (зелёный), review (оранж), failed (красный)
 - **PdfViewerPanel** — просмотрщик неразрезанного PDF в правой панели с A4-пропорциями, навигацией и скачиванием
 - **DossierModal** — тип документа сверху превью, разделители между группами типов, увеличен `marginBottom` и `padding`
 - **PageTile**: зелёная рамка + glow 6px при выборе, 150×200px, иконка-документ с pulse-анимацией
-- **ReviewPage**: фильтр «Все» первым, счётчики на кнопках фильтров вместо баджа у «Досье»
-- **UploadSection**: русские статусы (Ожидает/В обработке/Готово/Ошибка/На проверке), блокировка без проекта
+- **UploadSection**: русские статусы, блокировка без проекта, ошибки через `getErrMsg()`
 - **DocumentTypeList**: кнопка «Добавить» в шапке, проект в Select
 - **AppHeader**: кастомные кнопки вместо Tabs, одинаковые отступы
 - **Скроллбар**: кастомный `::-webkit-scrollbar` для тёмной (#5a5e66) и светлой (#d0d0d0) темы
-- **Select**: цвет текста выбранного значения `var(--text)` и плейсхолдера `var(--text-tertiary)` для тёмной темы
+- **Select/Input**: цвета в тёмной теме
 - **Тёмная тема**: корректное отображение всех элементов, CSS-переменные
 
 ---
@@ -176,10 +197,15 @@ docker compose -f docker-compose.deploy.yml up -d
 - VLM с реальными отсканированными документами (не сгенерированными PDF)
 - Обработка битых PDF, пустых PDF, не-PDF файлов
 - PdfViewerPanel с большими PDF (50+ страниц)
+- Устойчивость при недоступном Ollama
 
-### Улучшения API:
-- `POST /start-batch` при already running → 409 Conflict (сейчас 400)
-- Валидация PDF при загрузке
+### Известные проблемы:
+- VQM ошибка `"this model does not support pdf input"` при классификации страниц через VLM
+- DocumentType `id` (alias) — глобальный PK, а не составной `(project_id, id)`. Два проекта не могут иметь тип с одинаковым alias
+
+### Улучшения:
+- Интеграционные тесты (папка `tests/integration/` пуста)
+- Юнит-тесты для `ocr_module`, `cv_module`, `vlm_module`, `file_service`
 
 ### Деплой на Ubuntu с GPU:
 1. Установить CUDA 12.x + драйверы NVIDIA

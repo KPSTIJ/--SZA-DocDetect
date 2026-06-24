@@ -5,7 +5,6 @@ import {
   EyeOutlined, LeftOutlined, RightOutlined,
 } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
-import useConfigStore from '../../store/configStore';
 import PageTile from './PageTile';
 
 const getJobColor = (job) => {
@@ -27,7 +26,7 @@ const groupPagesByType = (pages) => {
 
 const DossierModal = ({ open, job, onClose }) => {
   const { selectedPages, togglePageSelection, patchPages, confirmJob, clearSelection, openPdfViewer } = useJobStore();
-  const { documentTypes } = useConfigStore();
+  const [documentTypes, setDocumentTypes] = useState([]);
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [batchType, setBatchType] = useState(null);
@@ -35,17 +34,25 @@ const DossierModal = ({ open, job, onClose }) => {
   const [previewModal, setPreviewModal] = useState({ open: false, pageNum: null });
   const [previewType, setPreviewType] = useState(null);
 
+  const loadPages = useCallback(() => {
+    if (!open || !job) return;
+    setLoading(true);
+    import('../../api/jobsApi').then(({ getJobPages }) =>
+      getJobPages(job.job_id).then(res => {
+        setPages(res.data);
+        setLoading(false);
+      }).catch(() => setLoading(false))
+    );
+  }, [open, job]);
+
   useEffect(() => {
     if (open && job) {
-      setLoading(true);
-      import('../../api/jobsApi').then(({ getJobPages }) =>
-        getJobPages(job.job_id).then(res => {
-          setPages(res.data);
-          setLoading(false);
-        }).catch(() => setLoading(false))
+      loadPages();
+      import('../../api/configApi').then(({ getDocumentTypes }) =>
+        getDocumentTypes(job.project_id || undefined).then(res => setDocumentTypes(res.data))
       );
     }
-  }, [open, job]);
+  }, [open, job, loadPages]);
 
   const jid = job?.job_id;
   const color = getJobColor(job);
@@ -105,7 +112,9 @@ const DossierModal = ({ open, job, onClose }) => {
     const docTypeId = batchType === '__undetected__' ? null : batchType;
     const assignments = Array.from(selectedSet).map(pn => ({ page_number: pn, document_type_id: docTypeId }));
     await patchPages(jid, assignments);
+    clearSelection(jid);
     setBatchType(null);
+    loadPages();
   };
 
   const handleBatchCancel = () => {

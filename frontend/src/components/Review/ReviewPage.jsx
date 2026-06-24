@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Row, Col, Button, Tooltip, Space } from 'antd';
+import { Card, Row, Col, Button, Tooltip, Space, Select, Input, Modal } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  EyeOutlined,
+  EyeOutlined, SearchOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
+import useProjectStore from '../../store/projectStore';
 import DossierModal from './DossierModal';
 
 const getJobColor = (job) => {
@@ -21,15 +22,17 @@ const FILTERS = [
 ];
 
 const ReviewPage = () => {
-  const { reviewJobs, fetchReviewJobs, startPolling, stopPolling, openPdfViewer } = useJobStore();
+  const { reviewJobs, fetchReviewJobs, deleteJob, openPdfViewer } = useJobStore();
+  const projects = useProjectStore((s) => s.projects);
 
   useEffect(() => {
     fetchReviewJobs();
-    startPolling();
-    return () => stopPolling();
-  }, [fetchReviewJobs, startPolling, stopPolling]);
+  }, [fetchReviewJobs]);
 
   const [filterTab, setFilterTab] = useState('all');
+  const [filterProjectId, setFilterProjectId] = useState(null);
+  const [filterBatchId, setFilterBatchId] = useState(null);
+  const [searchText, setSearchText] = useState('');
   const [dossierModal, setDossierModal] = useState({ open: false, job: null });
 
   const allJobs = [
@@ -38,20 +41,65 @@ const ReviewPage = () => {
     ...(reviewJobs.failed || []),
   ];
 
+  const batchOptions = useMemo(() => {
+    const map = new Map();
+    allJobs.forEach(j => {
+      const bid = j.batch_id ? String(j.batch_id) : j.job_id;
+      if (!map.has(bid)) {
+        const batchJobs = allJobs.filter(aj => (aj.batch_id ? String(aj.batch_id) : aj.job_id) === bid);
+        const projName = projects.find(p => String(p.id) === String(j.project_id))?.name || '';
+        const date = new Date(j.created_at);
+        const dateStr = `${date.getDate().toString().padStart(2,'0')}.${(date.getMonth()+1).toString().padStart(2,'0')}.${date.getFullYear()}`;
+        const label = batchJobs.length > 1
+          ? `${projName || 'Без проекта'} ${dateStr} (${batchJobs.length} PDF)`
+          : j.source_filename;
+        map.set(bid, { value: bid, label });
+      }
+    });
+    return Array.from(map.values());
+  }, [allJobs, projects]);
+
+  const filteredByProject = useMemo(() => {
+    if (!filterProjectId) return allJobs;
+    return allJobs.filter(j => String(j.project_id) === String(filterProjectId));
+  }, [allJobs, filterProjectId]);
+
+  const filteredByBatch = useMemo(() => {
+    if (!filterBatchId) return filteredByProject;
+    return filteredByProject.filter(j => (j.batch_id ? String(j.batch_id) : j.job_id) === filterBatchId);
+  }, [filteredByProject, filterBatchId]);
+
+  const filteredBySearch = useMemo(() => {
+    if (!searchText) return filteredByBatch;
+    const q = searchText.toLowerCase();
+    return filteredByBatch.filter(j => j.source_filename.toLowerCase().includes(q));
+  }, [filteredByBatch, searchText]);
+
   const countByFilter = useMemo(() => {
-    const all = allJobs.length;
-    const errors = allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed').length;
-    const failed = allJobs.filter(j => j.status === 'failed').length;
-    const ok = allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
+    const all = filteredBySearch.length;
+    const errors = filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed').length;
+    const failed = filteredBySearch.filter(j => j.status === 'failed').length;
+    const ok = filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
     return { all, errors, failed, ok };
-  }, [allJobs]);
+  }, [filteredBySearch]);
 
   const filteredJobs = (() => {
-    if (filterTab === 'errors') return allJobs.filter(j => j.error_pages > 0 && j.status !== 'failed');
-    if (filterTab === 'failed') return allJobs.filter(j => j.status === 'failed');
-    if (filterTab === 'ok') return allJobs.filter(j => j.status === 'done' && (j.error_pages || 0) === 0);
-    return allJobs;
+    if (filterTab === 'errors') return filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed');
+    if (filterTab === 'failed') return filteredBySearch.filter(j => j.status === 'failed');
+    if (filterTab === 'ok') return filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0);
+    return filteredBySearch;
   })();
+
+  const handleDelete = (job) => {
+    Modal.confirm({
+      title: 'Удалить загрузку?',
+      content: `Удалить "${job.source_filename}"?`,
+      okText: 'Удалить',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: () => deleteJob(job.job_id),
+    });
+  };
 
   return (
     <div>
@@ -60,7 +108,7 @@ const ReviewPage = () => {
           { label: 'Требуют проверки', value: countByFilter.errors, icon: <ExclamationCircleOutlined />, color: '#d4943a' },
           { label: 'Готово', value: countByFilter.ok, icon: <CheckCircleOutlined />, color: 'var(--accent)' },
           { label: 'Ошибки', value: countByFilter.failed, icon: <CloseCircleOutlined />, color: '#d13a3a' },
-          { label: 'Загружено', value: allJobs.length, icon: <div style={{ fontSize: 18, fontWeight: 700, lineHeight: '22px' }}>∑</div>, color: 'var(--text-secondary)' },
+          { label: 'Найдено', value: filteredBySearch.length, icon: <div style={{ fontSize: 18, fontWeight: 700, lineHeight: '22px' }}>∑</div>, color: 'var(--text-secondary)' },
         ].map((item) => (
           <Col key={item.label} xs={12} sm={6}>
             <Card style={{ borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)' }} styles={{ body: { padding: '16px 20px' } }}>
@@ -74,22 +122,46 @@ const ReviewPage = () => {
         ))}
       </Row>
 
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)',
+        padding: '12px 16px', marginBottom: 24,
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap' }}>Фильтры</span>
+        <Select
+          style={{ minWidth: 160, flex: 1 }}
+          placeholder="Все проекты"
+          value={filterProjectId}
+          onChange={(v) => { setFilterProjectId(v); setFilterBatchId(null); }}
+          allowClear
+          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+        />
+        <Select
+          style={{ minWidth: 160, flex: 1 }}
+          placeholder="Все загрузки"
+          value={filterBatchId}
+          onChange={(v) => setFilterBatchId(v)}
+          allowClear
+          options={batchOptions}
+          showSearch
+          optionFilterProp="label"
+        />
+        <Input
+          style={{ minWidth: 240, flex: 2 }}
+          placeholder="Поиск по названию..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          prefix={<SearchOutlined style={{ color: 'var(--text-tertiary)' }} />}
+          allowClear
+        />
+      </div>
+
       <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)' }}>
         <div style={{
           padding: '16px 24px', borderBottom: '1px solid var(--border)',
           background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
-          <Space>
-            <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>Досье</span>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--accent-bg)', color: 'var(--accent)',
-              borderRadius: 10, fontSize: 12, fontWeight: 700,
-              padding: '2px 10px', lineHeight: '20px',
-            }}>
-              {filteredJobs.length}
-            </span>
-          </Space>
+          <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>Досье</span>
           <Space size={6}>
             {FILTERS.map(f => {
               const active = filterTab === f.key;
@@ -144,11 +216,16 @@ const ReviewPage = () => {
                         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, marginBottom: 10 }}>
                           {job.total_pages || '?'} стр · {color.label}
                         </div>
-                        <div style={{ marginTop: 'auto' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ marginTop: 'auto', display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                           <Tooltip title="Открыть исходный PDF">
                             <Button size="small" icon={<EyeOutlined />}
                               onClick={(e) => { e.stopPropagation(); openPdfViewer(jid, job.source_filename); }}
                               style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', background: 'var(--bg-elevated)' }} />
+                          </Tooltip>
+                          <Tooltip title="Удалить загрузку">
+                            <Button size="small" danger icon={<DeleteOutlined />}
+                              onClick={(e) => { e.stopPropagation(); handleDelete(job); }}
+                              style={{ borderRadius: 6, padding: '2px 8px' }} />
                           </Tooltip>
                         </div>
                       </div>

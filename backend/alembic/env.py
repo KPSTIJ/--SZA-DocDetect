@@ -14,7 +14,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from backend.database import Base
-from backend.models.db_models import DocumentType, ProcessingJob, PageResult, OutputDocument
+from backend.models.db_models import DocumentType, ProcessingJob, PageResult, OutputDocument, Project
 
 target_metadata = Base.metadata
 

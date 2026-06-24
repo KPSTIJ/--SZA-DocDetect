@@ -1812,6 +1812,60 @@ VITE_API_BASE_URL=/api
 
 ---
 
+---
+
+## ПРИЛОЖЕНИЕ: Реализованные доработки (после ревизии 2026-06-23)
+
+### Проекты
+- Новая модель `Project` (id, name, created_at)
+- `project_id` FK добавлен в `DocumentType` и `ProcessingJob` (nullable)
+- CRUD API: `GET/POST /api/projects`, `DELETE /api/projects/{id}`
+- Frontend: `ProjectBar`, `projectStore`, `projectApi`
+- `selectedProjectId` сохраняется в localStorage
+
+### batch_id
+- `batch_id` UUID в `ProcessingJob` — группировка загрузок в пачки
+- При `uploadFiles` генерируется единый batch_id для всех файлов
+- UI: фильтр «Загрузка» группирует по batch
+
+### DELETE /api/jobs/{id}
+- Удаление загрузки: чистит `PageResult`, `OutputDocument` (cascade), файлы с диска
+- Кнопка 🗑 на каждой карточке в «Разборе»
+
+### Non-blocking оркестратор
+- Все синхронные операции (fitz, OCR, CV) вынесены в `asyncio.to_thread()`
+- Event loop не блокируется во время обработки → сервер отвечает на запросы
+
+### TextLayer на всех страницах
+- Паттерны ищутся на всех страницах, без порога `has_text_layer >= 50 символов`
+- Короткие титульники (напр. «ЗАЯВЛЕНИЕ О ЗАРАНЕЕ ДАННОМ АКЦЕПТЕ» = 37 симв.) корректно определяются
+
+### invalid_length не теряет тип
+- Страницы с `error_code="invalid_length"` сохраняют тип от TextLayer (не отправляются на Fusion)
+
+### Фильтры на странице «Разбор»
+- По проекту (Select)
+- По загрузке (batch, группировка: имя файла или «Проект ДД.ММ.ГГГГ (N PDF)»)
+- Поиск по имени файла
+- Фильтры между статистикой и списком досье
+
+### Прогрессбар
+- 5 цветных сегментов: pending/running/done/needs_review/failed
+- Прозрачность idle 0.7, фон трека `var(--border)`
+
+### Мелкие фиксы
+- `uploadFiles`/`startBatch` → `try/finally` (сброс loading)
+- `getErrMsg()` — человекочитаемые ошибки из Pydantic validation
+- UUID генерация `batch_id` с полифиллом для старых браузеров
+- `destroyOnClose` → `destroyOnHidden` (deprecation antd)
+- CSS: `--accent`, `--bg-elevated`, скроллбар, стрелки селектов
+
+### Alembic миграции
+- Единая миграция `d4ac9a505606_initial` (5 таблиц, все актуальные колонки)
+- Авто-применение в lifespan бэкенда
+- `python main.py db-migrate` — ручное применение
+
+
 ## ИТОГОВЫЙ ЧЕКЛИСТ ПОДЗАДАЧ
 
 | # | Подзадача | Ключевой файл/результат | Проверка |
@@ -1836,3 +1890,10 @@ VITE_API_BASE_URL=/api
 | 18 | **PdfViewerPanel** | Просмотрщик исходного PDF | Открыть PDF → панель справа, навигация, скачивание |
 | 19 | **Кастомный скроллбар** | `::-webkit-scrollbar` в App.jsx | Тёмная тема: `#5a5e66`, светлая: `#d0d0d0` |
 | 20 | **Сдвиг интерфейса** | `body.paddingRight` + `--panel-width` | Модалки сдвигаются вместе с контентом |
+| 21 | **Проекты** | `Project` модель, `project_routes`, `ProjectBar` | `POST /api/projects` → 201 |
+| 22 | **Алембик миграции** | `alembic/versions/d4ac9a505606_initial.py` | Запуск при старте, `python main.py db-migrate` |
+| 23 | **Batch-загрузки** | `batch_id` в `ProcessingJob` | Пачка PDF → один batch_id |
+| 24 | **DELETE /api/jobs/{id}** | `job_routes.py` | Файлы + БД очищены |
+| 25 | **Non-blocking пайплайн** | `asyncio.to_thread()` в `orchestrator.py` | API отвечает во время обработки |
+| 26 | **Фильтры Разбор** | `ReviewPage.jsx` | Проект + Загрузка + Поиск |
+| 27 | **Прогрессбар 5 сегментов** | `App.jsx` | pending/running/done/review/failed |
