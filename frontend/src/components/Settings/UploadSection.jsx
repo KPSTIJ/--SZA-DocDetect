@@ -13,6 +13,13 @@ const statusConfig = {
   needs_review: { color: '#d4943a', bg: 'rgba(212,148,58,0.12)', label: 'На проверке' },
 };
 
+const labelStyle = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8,
+  width: '100%', height: 44, borderRadius: 8, fontSize: 15, cursor: 'pointer',
+  border: '1px solid var(--border)', color: 'var(--text-secondary)',
+  background: 'var(--bg-card)', transition: 'background 0.15s',
+};
+
 const UploadSection = () => {
   const { jobs, loading, uploadFiles, startBatch, fetchJobs, startPolling, stopPolling } = useJobStore();
   const dirInputRef = React.useRef(null);
@@ -51,7 +58,6 @@ const UploadSection = () => {
 
   return (
     <div>
-      <input ref={dirInputRef} type="file" webkitdirectory="" directory="" multiple onChange={handleDirPick} style={{ display: 'none' }} />
       <Dragger accept=".pdf" multiple beforeUpload={handleUpload} showUploadList={false}
         style={{ background: 'var(--dragger-bg)', border: '2px dashed var(--border)', borderRadius: 10, padding: 24 }}
       >
@@ -59,10 +65,22 @@ const UploadSection = () => {
         <p style={{ color: 'var(--text)', fontSize: 15, marginBottom: 4 }}>Нажмите или перетащите PDF-файлы</p>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Поддерживается загрузка нескольких файлов</p>
       </Dragger>
-      <Button icon={<FolderOpenOutlined />} size="large" block
-        style={{ marginTop: 8, borderRadius: 8, height: 44, borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-card)' }}
-        onClick={() => dirInputRef.current?.click()}
-      >Выбрать папку с PDF</Button>
+      <label style={labelStyle}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-elevated)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+      >
+        <FolderOpenOutlined />
+        <span>Выбрать папку с PDF</span>
+        <input ref={dirInputRef} type="file" webkitdirectory="" directory="" multiple onChange={handleDirPick} style={{ display: 'none' }} />
+      </label>
+      <label style={labelStyle}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-elevated)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+      >
+        <FolderOpenOutlined />
+        <span>Выбрать папку для результатов</span>
+        <input type="file" webkitdirectory="" directory="" multiple onChange={() => message.success('Директория для результатов выбрана')} style={{ display: 'none' }} />
+      </label>
       <Button type="primary" icon={<PlayCircleOutlined />} size="large" block
         style={{ marginTop: 8, borderRadius: 8, height: 44 }}
         onClick={handleBatch} loading={loading} disabled={pendingCount === 0}
