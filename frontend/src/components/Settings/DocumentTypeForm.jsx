@@ -1,5 +1,5 @@
 import React from 'react';
-import { Form, Input, InputNumber, Select, Button } from 'antd';
+import { Form, Input, InputNumber, Select, Button, message } from 'antd';
 import useConfigStore from '../../store/configStore';
 
 const DocumentTypeForm = ({ initialValues, onSuccess }) => {
@@ -14,8 +14,9 @@ const DocumentTypeForm = ({ initialValues, onSuccess }) => {
         await createDocumentType(values);
       }
       onSuccess?.();
-    } catch {
-      // error handled by store
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || 'Ошибка сохранения';
+      message.error(typeof detail === 'string' ? detail : JSON.stringify(detail));
     }
   };
 
@@ -35,14 +36,14 @@ const DocumentTypeForm = ({ initialValues, onSuccess }) => {
           { pattern: /^[a-z][a-z0-9_]*$/, message: 'Только [a-z0-9_], начинается с буквы' },
         ]}
       >
-        <Input disabled={!!initialValues} placeholder="например, credit_agreement" />
+        <Input disabled={!!initialValues} placeholder="credit_agreement" />
       </Form.Item>
       <Form.Item
         name="name"
         label={<span style={{ fontWeight: 500, color: 'var(--text)' }}>Название</span>}
         rules={[{ required: true, message: 'Обязательное поле' }]}
       >
-        <Input placeholder="например, Кредитный договор" />
+        <Input placeholder="Кредитный договор" />
       </Form.Item>
       <Form.Item
         name="text_patterns"

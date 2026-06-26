@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Checkbox, Tooltip } from 'antd';
+import { FileTextOutlined } from '@ant-design/icons';
 import { getPagePreview } from '../../api/jobsApi';
 
 const statusConfig = {
@@ -33,8 +34,6 @@ const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) =
     return () => observer.disconnect();
   }, [jobId, page.page_number]);
 
-  const edgeColor = isSelected ? 'var(--accent)' : hover ? '#ffffff' : null;
-
   return (
     <Tooltip title={`Стр. ${page.page_number + 1}${page.document_type_id ? ` · ${page.document_type_id}` : ''}`}>
       <div
@@ -46,8 +45,9 @@ const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) =
           width: 150, height: 200, flexShrink: 0,
           borderRadius: 8, cursor: 'pointer',
           background: 'var(--bg-elevated)',
-          border: edgeColor ? `2px solid ${edgeColor}` : '1px solid var(--border)',
-          transition: 'border 0.12s, border-color 0.12s',
+          border: isSelected ? '2px solid var(--accent)' : hover ? '2px solid #ffffff' : '1px solid var(--border)',
+          boxShadow: isSelected ? '0 0 0 6px #3dbf7d' : 'none',
+          transition: 'border 0.15s, border-color 0.15s, box-shadow 0.15s',
         }}
       >
         <div style={{ width: '100%', height: '100%', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
@@ -65,15 +65,21 @@ const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) =
           ) : (
             <div style={{
               width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text-tertiary)', fontSize: 13,
+              color: 'var(--text-tertiary)',
             }}>
-              Загрузка...
+              <style>{`
+                @keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.65; } }
+              `}</style>
+              <FileTextOutlined style={{
+                fontSize: 106, opacity: 0.4, animation: 'pulse 2.5s ease-in-out infinite',
+                marginTop: -12,
+              }} />
             </div>
           )}
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, background: cfg.color,
-            color: '#fff', fontSize: 11, fontWeight: 600, padding: '3px 8px',
-            textAlign: 'center',
+            color: '#fff', fontSize: 13, fontWeight: 800, padding: '1px 8px 2px',
+            textAlign: 'center', lineHeight: '22px',
           }}>
             {page.page_number + 1}
           </div>

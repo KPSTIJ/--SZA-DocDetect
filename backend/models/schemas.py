@@ -1,6 +1,18 @@
 from datetime import datetime
+from uuid import UUID
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+
+
+class ProjectResponse(BaseModel):
+    id: UUID
+    name: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobStatus(str, Enum):
@@ -26,6 +38,7 @@ class OutputDocumentStatus(str, Enum):
 
 class DocumentTypeCreate(BaseModel):
     id: str = Field(..., pattern=r'^[a-z][a-z0-9_]*$', description="slug-идентификатор")
+    project_id: UUID | None = None
     name: str = Field(..., min_length=1, max_length=100)
     text_patterns: list[str] = Field(..., min_length=1)
     min_pages: int = Field(..., ge=1)
@@ -49,6 +62,7 @@ class DocumentTypeUpdate(BaseModel):
 
 class DocumentTypeResponse(BaseModel):
     id: str
+    project_id: UUID | None = None
     name: str
     text_patterns: list[str]
     min_pages: int
@@ -68,6 +82,8 @@ class JobUploadResponse(BaseModel):
 
 class JobSummary(BaseModel):
     job_id: str
+    project_id: UUID | None = None
+    batch_id: UUID | None = None
     source_filename: str
     status: JobStatus
     total_pages: int | None = None

@@ -235,6 +235,17 @@ def cmd_pipeline():
     asyncio.run(_run())
 
 
+def cmd_db_migrate():
+    """Применить миграции Alembic."""
+    sys.path.insert(0, ROOT_DIR)
+    os.chdir(BACKEND_DIR)
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+    print("  Migrations applied successfully")
+
+
 def cmd_db_init():
     """Пересоздать БД."""
     _cleanup_db()
@@ -360,7 +371,7 @@ def _cleanup_data():
 
 def main():
     parser = argparse.ArgumentParser(description="PDF Dossier Splitter")
-    parser.add_argument("command", choices=["run", "dev", "test", "e2e", "pipeline", "db-init", "shell"],
+    parser.add_argument("command", choices=["run", "dev", "test", "e2e", "pipeline", "db-init", "db-migrate", "shell"],
                         help="Command to execute")
     args = parser.parse_args()
 
@@ -371,6 +382,7 @@ def main():
         "e2e": cmd_e2e,
         "pipeline": cmd_pipeline,
         "db-init": cmd_db_init,
+        "db-migrate": cmd_db_migrate,
         "shell": cmd_shell,
     }
 

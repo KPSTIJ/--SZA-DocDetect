@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as jobsApi from '../api/jobsApi';
+import useProjectStore from './projectStore';
 
 const useJobStore = create((set, get) => ({
   jobs: [],
@@ -7,6 +8,7 @@ const useJobStore = create((set, get) => ({
   loading: false,
   pollingInterval: null,
   selectedPages: {},
+  pdfViewer: { open: false, jobId: null, filename: null },
 
   getProgress: () => {
     const jobs = get().jobs;
@@ -23,25 +25,44 @@ const useJobStore = create((set, get) => ({
   },
 
   uploadFiles: async (files) => {
+    const projectId = useProjectStore.getState().selectedProjectId;
+    const batchId = crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Date.now().toString().slice(-12).padStart(12, '0');
     set({ loading: true });
-    for (const file of files) {
-      await jobsApi.uploadPdf(file);
+    try {
+      for (const file of files) {
+        await jobsApi.uploadPdf(file, projectId, batchId);
+      }
+    } finally {
+      set({ loading: false });
     }
-    set({ loading: false });
+  },
+
+  deleteJob: async (jobId) => {
+    await jobsApi.deleteJob(jobId);
+    await get().fetchJobs();
+    await get().fetchReviewJobs();
   },
 
   startBatch: async () => {
-    await jobsApi.startBatch();
-    get().startPolling();
+    const projectId = useProjectStore.getState().selectedProjectId;
+    try {
+      await jobsApi.startBatch(projectId);
+    } finally {
+      get().startPolling();
+    }
   },
 
   fetchJobs: async () => {
-    const res = await jobsApi.getJobs({ limit: 100 });
+    const projectId = useProjectStore.getState().selectedProjectId;
+    const params = { limit: 100 };
+    if (projectId) params.project_id = projectId;
+    const res = await jobsApi.getJobs(params);
     set({ jobs: res.data.items });
   },
 
-  fetchReviewJobs: async () => {
-    const res = await jobsApi.getReviewJobs();
+  fetchReviewJobs: async (projectId) => {
+    const pid = projectId || useProjectStore.getState().selectedProjectId;
+    const res = await jobsApi.getReviewJobs(pid);
     set({ reviewJobs: res.data });
   },
 
@@ -96,6 +117,14 @@ const useJobStore = create((set, get) => ({
   confirmJob: async (jobId) => {
     await jobsApi.confirmReview(jobId);
     await get().fetchReviewJobs();
+  },
+
+  openPdfViewer: (jobId, filename) => {
+    set({ pdfViewer: { open: true, jobId, filename } });
+  },
+
+  closePdfViewer: () => {
+    set({ pdfViewer: { open: false, jobId: null, filename: null } });
   },
 }));
 

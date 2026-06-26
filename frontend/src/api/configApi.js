@@ -1,6 +1,7 @@
 import client from './client';
 
-export const getDocumentTypes = () => client.get('/config/document-types');
+export const getDocumentTypes = (projectId) =>
+  client.get('/config/document-types', { params: projectId ? { project_id: projectId } : {} });
 
 export const createDocumentType = (data) => client.post('/config/document-types', data);
 

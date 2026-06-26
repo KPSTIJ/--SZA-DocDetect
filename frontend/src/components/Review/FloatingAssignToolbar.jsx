@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Select, Space, Tag } from 'antd';
+import { Button, Select, Space } from 'antd';
 import useJobStore from '../../store/jobStore';
 import useConfigStore from '../../store/configStore';
 
@@ -24,20 +24,49 @@ const FloatingAssignToolbar = ({ jobId }) => {
 
   return createPortal(
     <div style={{
-      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--bg-card)', padding: '12px 20px', borderRadius: 10,
-      boxShadow: '0 4px 24px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
-      zIndex: 1060, display: 'flex', alignItems: 'center', gap: 12,
+      position: 'fixed', bottom: 0, left: 0, right: 0,
+      background: 'var(--bg-card)',
+      borderTop: '1px solid var(--border)',
+      boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+      zIndex: 1060,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '14px 20px',
+      gap: 14,
     }}>
-      <Tag style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', color: 'var(--accent)', borderRadius: 6, padding: '2px 10px', fontWeight: 600, fontSize: 13 }}>
-        {selectedPages.size} стр.
-      </Tag>
-      <Select style={{ width: 200 }} placeholder="Назначить тип..." allowClear value={selectedType} onChange={setSelectedType}
-        options={[...documentTypes.map((dt) => ({ label: dt.name, value: dt.id })), { label: 'Не распознан', value: '__undetected__' }]} />
-      <Space>
-        <Button type="primary" onClick={handleApply} disabled={!selectedType} style={{ borderRadius: 6 }}>Применить</Button>
-        <Button onClick={handleCancel} style={{ borderRadius: 6 }}>Отмена</Button>
-      </Space>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        maxWidth: 1400, width: '100%', justifyContent: 'center',
+      }}>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontWeight: 600, fontSize: 14, color: 'var(--accent)',
+          background: 'var(--accent-bg)', padding: '4px 14px', borderRadius: 6,
+          border: '1px solid var(--accent-border)',
+        }}>
+          {selectedPages.size} стр.
+        </span>
+        <Select
+          style={{ width: 240 }}
+          placeholder="Назначить тип..."
+          allowClear
+          value={selectedType}
+          onChange={setSelectedType}
+          options={[
+            ...documentTypes.map((dt) => ({ label: dt.name, value: dt.id })),
+            { label: 'Не распознан', value: '__undetected__' },
+          ]}
+        />
+        <Space>
+          <Button type="primary" onClick={handleApply} disabled={!selectedType} style={{ borderRadius: 6, height: 36, padding: '4px 20px' }}>
+            Применить
+          </Button>
+          <Button onClick={handleCancel} style={{ borderRadius: 6, height: 36, padding: '4px 20px' }}>
+            Отмена
+          </Button>
+        </Space>
+      </div>
     </div>,
     document.body,
   );

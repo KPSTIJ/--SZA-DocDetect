@@ -19,6 +19,16 @@ async def save_uploaded_file(job_id: uuid.UUID, file: UploadFile) -> Path:
     return dest
 
 
+def save_content_to_file(job_id: uuid.UUID, content: bytes) -> Path:
+    settings = Settings()
+    input_dir = Path(settings.INPUT_DIR)
+    job_dir = input_dir / str(job_id)
+    job_dir.mkdir(parents=True, exist_ok=True)
+    dest = job_dir / "original.pdf"
+    dest.write_bytes(content)
+    return dest
+
+
 def get_job_dir(job_id: uuid.UUID) -> Path:
     settings = Settings()
     return Path(settings.INPUT_DIR) / str(job_id)

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Row, Col } from 'antd';
 import DocumentTypeList from './DocumentTypeList';
 import UploadSection from './UploadSection';
+import ProjectBar from '../ProjectBar';
 import useConfigStore from '../../store/configStore';
 
 const SettingsPage = () => {
@@ -17,6 +18,9 @@ const SettingsPage = () => {
         <DocumentTypeList />
       </Col>
       <Col xs={24} lg={8}>
+        <div style={{ marginBottom: 16 }}>
+          <ProjectBar />
+        </div>
         <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
             Загрузка и обработка

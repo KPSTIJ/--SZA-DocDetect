@@ -1,6 +1,22 @@
+import io
 from pathlib import Path
 import numpy as np
 import fitz
+
+
+def validate_pdf(content: bytes) -> None:
+    """Проверяет, что контент является валидным PDF.
+    Бросает ValueError если файл битый, пустой или не PDF."""
+    if not content or len(content) < 8:
+        raise ValueError("corrupted_pdf: file too small or empty")
+    try:
+        doc = fitz.open(stream=content, filetype="pdf")
+        page_count = len(doc)
+        doc.close()
+        if page_count == 0:
+            raise ValueError("empty_pdf: PDF has no pages")
+    except fitz.FileDataError:
+        raise ValueError("corrupted_pdf: file is not a valid PDF or is damaged")
 
 
 def extract_text_layer(pdf_path: str) -> list[dict]:

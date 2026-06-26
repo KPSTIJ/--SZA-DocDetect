@@ -7,10 +7,19 @@ from sqlalchemy.orm import relationship
 from backend.database import Base
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class DocumentType(Base):
     __tablename__ = "document_types"
 
     id = Column(String, primary_key=True)
+    project_id = Column(Uuid, ForeignKey("projects.id"), nullable=True)
     name = Column(String(100), nullable=False)
     text_patterns = Column(JSON, nullable=False, default=list)
     min_pages = Column(Integer, nullable=False, default=1)
@@ -24,6 +33,8 @@ class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    project_id = Column(Uuid, ForeignKey("projects.id"), nullable=True)
+    batch_id = Column(Uuid, nullable=True)
     source_filename = Column(String(255), nullable=False)
     source_path = Column(String(500), nullable=False)
     status = Column(Enum("pending", "running", "done", "failed", "needs_review", name="job_status"), nullable=False, default="pending")

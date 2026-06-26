@@ -18,7 +18,7 @@
 
 ## Стек
 
-**Backend**: Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, SQLite, Pydantic v2, pydantic-settings  
+**Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, SQLite, Pydantic v2, pydantic-settings  
 **ML/CV**: PaddleOCR (lang=ru), DocLayoutYOLO, Qwen3VL-8b через Ollama, rapidfuzz, OpenCV, PyMuPDF (fitz)  
 **Frontend**: React 18, Ant Design 5, Vite, Zustand, Axios
 
@@ -31,7 +31,7 @@ project/
 ├── main.py                 # Точка входа (run/dev/test/e2e/pipeline/db-init/shell)
 ├── START.md                # Гайд по запуску и деплою
 ├── .env.example
-├── docker-compose.yml
+├── docker-compose.yml / docker-compose.dev.yml / docker-compose.deploy.yml
 ├── Dockerfile.backend / Dockerfile.frontend
 ├── deploy/
 │   ├── deploy.sh           # Скрипт деплоя на Ubuntu
@@ -57,12 +57,16 @@ project/
 │       ├── App.jsx + main.jsx
 │       ├── api/             # client.js, configApi.js, jobsApi.js
 │       ├── store/           # configStore.js, jobStore.js
-│       └── components/      # Settings/, Review/, Layout/, Icons.jsx
+│       └── components/
+│           ├── PdfViewerPanel.jsx  # Просмотрщик исходного PDF
+│           ├── Settings/    # SettingsPage, DocumentTypeList, DocumentTypeForm, UploadSection
+│           ├── Review/      # ReviewPage, DossierModal, PageTile, FloatingAssignToolbar
+│           └── Layout/      # AppHeader, Icons
 ```
 
 ---
 
-## Статус реализации (все 17 подзадач из SPECIFICATION.md выполнены)
+## Статус реализации (все 17 подзадач + дополнительные фичи)
 
 ### Что реализовано:
 
@@ -87,96 +91,155 @@ project/
 | 17 | Деплой: Docker, nginx, systemd, deploy.sh | ✅ |
 
 ### Дополнительно сделано:
-- `main.py` — глобальная точка входа (run/dev/test/e2e/pipeline/db-init/shell)
+
+- **Система проектов** — `Project` модель БД, CRUD API, ProjectBar в UI
+- **Scope по проекту** — DocumentType и ProcessingJob привязаны к проекту через `project_id`
+- **Alembic миграции** — единая миграция всех таблиц, авто-применение при старте (`alembic upgrade head` в lifespan)
+- **batch_id** — группировка загрузок (пачка PDF → один batch_id)
+- **DELETE /api/jobs/{id}** — удаление загрузки с очисткой файлов на диске
+- **Non-blocking оркестратор** — синхронные ML-операции (OCR, CV, fitz) вынесены в `asyncio.to_thread()`
+- **TextLayer на всех страницах** — титульники ищутся даже на страницах с коротким текстом (<50 символов)
+- **invalid_length не теряет тип** — страницы с невалидной длиной сегмента сохраняют свой тип от TextLayer
+- **Фильтры на странице «Разбор»** — по проекту, по загрузке (batch), поиск по имени файла
+- **ProgressBar** — 5 сегментов (pending/running/done/needs_review/failed)
+- **selectedProjectId в localStorage** — сохраняется между перезагрузками страницы
+- **Кнопка удаления загрузки** — на каждой карточке досье
+- **Обработка ошибок API** — читаемые сообщения об ошибках (Pydantic validation → человеческий текст)
+- `python main.py db-migrate` — ручное применение миграций
 - `python main.py dev` — одновременный запуск бэкенда + фронтенда
 - `.env` с настройками Ollama (http://192.168.51.247:11434)
-- Визуальный редизайн UI под цвета логотипа (#1a6b4a), перевод на русский
-- Inline JSON-парсинг в VLM-модуле (регекс-извлечение из ответа модели)
-- Progress bar: общий для всех вкладок, полупрозрачный в idle
+- Визуальный редизайн UI, перевод на русский
+- Inline JSON-парсинг в VLM-модуле
+
+### PdfViewerPanel — просмотрщик исходного PDF
+
+- Фиксированная панель справа, ширина по пропорциям A4: `(100vh − 100px) × 210 / 297 + 40px`
+- Одна страница за раз, `objectFit: contain`, `maxHeight: 100%`
+- Навигация: стрелки клавиатуры ←/→ и скролл колёсиком по изображению
+- Кнопки: «Скачать PDF», «Закрыть»
+- При открытии основной интерфейс сдвигается влево через `body.paddingRight`
+- Модальные окна (Ant Design Modal) сдвигаются через `body[data-panel-open] .ant-modal-wrap`
+- `z-index: 1100` — поверх стандартных модалок
+
+### Исправленные баги:
+
+| Баг | Фикс |
+|-----|------|
+| PaddleOCR `ConvertPirAttribute2RuntimeAttribute` на CPU | `FLAGS_use_mkldnn=0` + `paddlepaddle==3.0.0` + `paddleocr==3.6.0` |
+| VLM `NameError: name 'logger' not defined` | Добавлен `import logging` + `logger` |
+| VLM возвращал пустой ответ от Ollama | Resize изображений до max 1024px |
+| `GET /api/jobs/{id}` — 500 `'OutputDocument' object has no attribute 'doc'` | `d.doc.document_type_id` → `d.document_type_id` |
+| `ReferenceError: Cannot access 'pdfViewer' before initialization` | Перенос `const pdfViewer` выше `useEffect` (Temporal Dead Zone) |
+| `stats is not defined` в ReviewPage | Замена `stats.*` на `countByFilter.*` и `allJobs.length` |
+| Кнопка «Запустить» висела при ошибке | `try/finally` в `uploadFiles`/`startBatch` |
+| React crash при Pydantic-ошибке | `getErrMsg()` — извлекает текст из любого формата |
+| 422 при загрузке `batch_id` | UUID генерация с полифиллом для старых браузеров |
+| Акцепт приклеивался к КД | TextLayer теперь ищет паттерны на всех страницах, включая короткий текст |
+| `invalid_length` стирал тип | Страницы с `invalid_length` сохраняют тип от TextLayer (не идут в Fusion) |
+| ML-операции блокировали event loop | Синхронные вызовы обёрнуты в `asyncio.to_thread()` |
+
+### Доработки Frontend:
+
+- **ProjectBar** — выбор/создание проекта, интеграция с SettingsPage
+- **Фильтры «Разбор»** — проект / загрузка (batch) / поиск по файлу
+- **Прогрессбар** — 5 цветных сегментов: pending (серый), running (синий), done (зелёный), review (оранж), failed (красный)
+- **PdfViewerPanel** — просмотрщик неразрезанного PDF в правой панели с A4-пропорциями, навигацией и скачиванием
+- **DossierModal** — тип документа сверху превью, разделители между группами типов, увеличен `marginBottom` и `padding`
+- **PageTile**: зелёная рамка + glow 6px при выборе, 150×200px, иконка-документ с pulse-анимацией
+- **UploadSection**: русские статусы, блокировка без проекта, ошибки через `getErrMsg()`
+- **DocumentTypeList**: кнопка «Добавить» в шапке, проект в Select
+- **AppHeader**: кастомные кнопки вместо Tabs, одинаковые отступы
+- **Скроллбар**: кастомный `::-webkit-scrollbar` для тёмной (#5a5e66) и светлой (#d0d0d0) темы
+- **Select/Input**: цвета в тёмной теме
+- **Тёмная тема**: корректное отображение всех элементов, CSS-переменные
+
+---
+
+## Развёртывание
+
+### На Ubuntu (вручную, без sudo для Docker):
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install paddlepaddle==3.0.0
+pip install paddleocr==3.6.0
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r backend/requirements.prod.txt
+pip install doclayout-yolo
+cp .env.example .env
+# настроить OLLAMA_BASE_URL, CORS_ORIGINS
+cd frontend && npm install && npm run build && cd ..
+export FLAGS_use_mkldnn=0
+uvicorn backend.main:app --host 0.0.0.0 --port 18000
+```
+
+### Docker (требуются права на docker.sock):
+
+```bash
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+### Запущенные сервисы:
+
+| Сервис | URL |
+|--------|-----|
+| Frontend (UI) | http://192.168.51.6:5173 |
+| Backend API | http://192.168.51.6:18000 |
+| Swagger docs | http://192.168.51.6:18000/docs |
 
 ---
 
 ## Осталось сделать
 
-### Критические баги:
-- **PaddleOCR на Windows не работает** (ошибка oneDNN `ConvertPirAttribute2RuntimeAttribute`). На Ubuntu с CUDA 12.x должно работать через `paddlepaddle-gpu==3.0.0rc0`
-- **PaddlePaddle 3.x** (новая версия PaddleOCR) требует `paddlex` и `modelscope`, которые тянут `torch`. На Windows `torch` иногда падает с `shm.dll` error
-- **Решение:** PaddleOCR был понижен до 2.x, но PaddleOCR 2.10 несовместим с PaddlePaddle 3.x. Оптимальная комбинация: **PaddlePaddle 3.3.1 + PaddleOCR 3.6.0** на Ubuntu + CUDA
-
 ### Нужно протестировать:
 - Полный pipeline на Ubuntu с CUDA + GPU (PaddleOCR GPU, DocLayoutYOLO)
 - VLM с реальными отсканированными документами (не сгенерированными PDF)
-- E2E-тест с загрузкой → обработкой → проверкой результата
 - Обработка битых PDF, пустых PDF, не-PDF файлов
-
-### Улучшения API:
-- `POST /start-batch` при already running → 409 Conflict (сейчас будет 500)
-- Валидация PDF при загрузке (сейчас `fitz.open` упадёт с исключением)
-
-### Деплой на Ubuntu:
-1. Установить Python 3.11, Node.js, nginx, git
-2. Установить CUDA 12.x + драйверы NVIDIA для RTX 5080
-3. `pip install paddlepaddle-gpu==3.0.0rc0 -f https://www.paddlepaddle.org.cn/whl/linux/cuda12/stable.html`
-4. `pip install -r backend/requirements.prod.txt -r backend/requirements.ml.txt`
-5. Настроить `.env` (Ollama URL, CORS origins, DB path)
-6. `sudo bash deploy/deploy.sh <repo-url>`
-7. Переключить с SQLite на PostgreSQL (опционально, позже)
-8. Добавить Celery + Redis для очереди задач (опционально, позже)
+- PdfViewerPanel с большими PDF (50+ страниц)
+- Устойчивость при недоступном Ollama
 
 ### Известные проблемы:
-- Путь к проекту содержит `!` (восклицательный знак): `D:\SZA\! SZA DocDetect\`. На Windows это вызывает проблемы в PowerShell. Решение: работать через `Get-ChildItem "$base\!*"` или юникс-окружение
-- На Ubuntu этой проблемы не будет
+- VQM ошибка `"this model does not support pdf input"` при классификации страниц через VLM
+- DocumentType `id` (alias) — глобальный PK, а не составной `(project_id, id)`. Два проекта не могут иметь тип с одинаковым alias
+
+### Улучшения:
+- Интеграционные тесты (папка `tests/integration/` пуста)
+- Юнит-тесты для `ocr_module`, `cv_module`, `vlm_module`, `file_service`
+
+### Деплой на Ubuntu с GPU:
+1. Установить CUDA 12.x + драйверы NVIDIA
+2. `pip install paddlepaddle-gpu==3.0.0rc0`
+3. Настроить `.env`
+4. `sudo bash deploy/deploy.sh`
 
 ---
 
 ## Правила работы
 
 ### Перед написанием кода
-
-- Перечитай соответствующий раздел спецификации.
-- Уточни подзадачу и её номер, прежде чем начинать.
-- Если что-то не описано в спеке — спроси, не домысливай.
-
-### При реализации
-
-- Точно соблюдай сигнатуры функций, классов и API-эндпоинтов из спецификации.
-- Имена полей БД, Pydantic-схем, URL эндпоинтов — только из спеки, без переименований.
-- Enum-значения (`pending | running | done | failed | needs_review` и др.) — строго как в спеке.
-- Пороговые значения берутся из `Settings` (config.py), не хардкодятся в модулях.
+- Перечитай соответствующий раздел спецификации
+- Уточни подзадачу и её номер
+- Если что-то не описано в спеке — спроси
 
 ### Backend-соглашения
-
-- Async везде: все обработчики FastAPI и методы модулей — `async def`, если явно не указано иначе.
-- `get_db` — через `Depends`, не импортировать сессию напрямую.
-- Миграции — только через Alembic, никогда `Base.metadata.create_all()` в проде.
-- Логирование — через стандартный `logging`, уровень из `Settings.LOGGING_LEVEL`.
-- Исключения API — `HTTPException` с понятными `detail`.
+- Async везде
+- `get_db` — через `Depends`
+- Миграции — только через Alembic
+- Логирование — через стандартный `logging`
 
 ### Frontend-соглашения
-
-- Состояние — только через Zustand-сторы (`configStore`, `jobStore`).
-- Прямые вызовы API — только из `api/configApi.js` и `api/jobsApi.js`, не из компонентов.
-- Компоненты не держат бизнес-логику — только отображение и вызовы стора.
-- Polling реализован в `jobStore.startPolling()` с интервалом 3 секунды.
-- Обработка ошибок — через интерцептор в `api/client.js`.
-
-### Что нельзя делать без явного запроса
-
-- Изменять схему БД без создания Alembic-миграции.
-- Удалять или переименовывать существующие файлы.
-- Менять структуру директорий.
-- Переключаться на другие библиотеки (например, заменять PaddleOCR на tesseract).
-- Добавлять зависимости в `requirements.txt` или `package.json`.
+- Состояние — через Zustand-сторы
+- API-вызовы — только из `api/` модулей
+- Polling 3 секунды в `jobStore`
+- Тёмная тема — через CSS-переменные: `--bg-card`, `--border`, `--text`, `--accent` и т.д.
 
 ---
 
 ## Команды для проверки
 
 ```bash
-python main.py run          # Запустить бэкенд
-python main.py dev          # Бэкенд + фронтенд одновременно
 python main.py test         # Unit-тесты (15 шт.)
 python main.py e2e          # API-тесты (15 сценариев)
 python main.py pipeline     # Тест пайплайна text_layer
-cd frontend && npm run dev  # Фронтенд отдельно
 ```

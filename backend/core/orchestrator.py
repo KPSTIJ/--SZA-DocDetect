@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -62,7 +63,7 @@ class DocumentOrchestrator:
         doc_types_orm = result.scalars().all()
         doc_types_dict = {dt.id: dt for dt in doc_types_orm}
 
-        pages_text = extract_text_layer(pdf_path)
+        pages_text = await asyncio.to_thread(extract_text_layer, pdf_path)
         total_pages = len(pages_text)
 
         if total_pages == 0:
@@ -75,22 +76,21 @@ class DocumentOrchestrator:
 
         tl_assignments: dict[int, PageAssignment] = {}
 
-        if text_pages:
-            title_matches = find_title_pages_by_text(text_pages, doc_types_orm)
-            logger.info("Job %s — text_layer found %d title pages", job.id, len(title_matches))
-            tl_result = assign_pages_from_title_pages(
-                title_matches, total_pages, doc_types_dict
-            )
-            for a in tl_result:
-                tl_assignments[a.page_number] = a
+        title_matches = find_title_pages_by_text(pages_text, doc_types_orm)
+        logger.info("Job %s — text_layer found %d title pages", job.id, len(title_matches))
+        tl_result = assign_pages_from_title_pages(
+            title_matches, total_pages, doc_types_dict
+        )
+        for a in tl_result:
+            tl_assignments[a.page_number] = a
 
         need_fusion: set[int] = set()
         for page_num in range(total_pages):
-            if page_num in [p["page"] for p in scan_pages]:
+            if page_num in [p["page"] for p in scan_pages] and page_num not in tl_assignments:
                 need_fusion.add(page_num)
             elif page_num in tl_assignments:
                 a = tl_assignments[page_num]
-                if a.error_code:
+                if a.error_code and a.error_code != "invalid_length":
                     need_fusion.add(page_num)
             else:
                 need_fusion.add(page_num)
@@ -99,19 +99,19 @@ class DocumentOrchestrator:
         if need_fusion and self.ocr_module and self.cv_module:
             logger.info("Job %s — fusion processing %d pages", job.id, len(need_fusion))
             for page_num in sorted(need_fusion):
-                raw_img = render_page_to_image(
-                    pdf_path, page_num, self.settings.PDF_RENDER_DPI
+                raw_img = await asyncio.to_thread(
+                    render_page_to_image, pdf_path, page_num, self.settings.PDF_RENDER_DPI
                 )
-                ocr_img = enhance_for_ocr(raw_img)
-                cv_img = enhance_for_cv(raw_img)
+                ocr_img = await asyncio.to_thread(enhance_for_ocr, raw_img)
+                cv_img = await asyncio.to_thread(enhance_for_cv, raw_img)
 
-                ocr_text = self.ocr_module.extract_text(ocr_img)
+                ocr_text = await asyncio.to_thread(self.ocr_module.extract_text, ocr_img)
                 ocr_matches = self.ocr_module.match_patterns(
                     ocr_text, doc_types_orm, self.settings.OCR_MATCH_THRESHOLD
                 )
                 best_ocr = max(ocr_matches, key=lambda m: m.score) if ocr_matches else None
 
-                visual = self.cv_module.detect_visual_patterns(cv_img)
+                visual = await asyncio.to_thread(self.cv_module.detect_visual_patterns, cv_img)
                 result_fusion = combine_ocr_and_cv(
                     best_ocr, visual, doc_types_orm, self.settings.OCR_MATCH_THRESHOLD
                 )
@@ -137,11 +137,11 @@ class DocumentOrchestrator:
             logger.info("Job %s — vlm processing %d pages", job.id, len(need_vlm))
             rendered_cache: dict[int, np.ndarray | None] = {}
 
-            def get_img(n: int):
+            async def get_img(n: int):
                 if n not in rendered_cache:
                     if 0 <= n < total_pages:
-                        rendered_cache[n] = render_page_to_image(
-                            pdf_path, n, self.settings.PDF_RENDER_DPI
+                        rendered_cache[n] = await asyncio.to_thread(
+                            render_page_to_image, pdf_path, n, self.settings.PDF_RENDER_DPI
                         )
                     else:
                         rendered_cache[n] = None
@@ -151,9 +151,9 @@ class DocumentOrchestrator:
 
             for page_num in sorted(need_vlm):
                 vlm_result = await self.vlm_module.classify_page(
-                    prev_image=get_img(page_num - 1),
-                    target_image=get_img(page_num),
-                    next_image=get_img(page_num + 1),
+                    prev_image=await get_img(page_num - 1),
+                    target_image=await get_img(page_num),
+                    next_image=await get_img(page_num + 1),
                     document_types=doc_types_orm,
                     recent_context=running_context[-5:],
                 )
@@ -317,8 +317,8 @@ class DocumentOrchestrator:
                 job.source_filename, doc["doc_type_id"], doc["occurrence_index"]
             )
             output_path = f"{self.settings.OUTPUT_DIR}/{job.id}/{filename}"
-            split_pdf(
-                job.source_path, output_path,
+            await asyncio.to_thread(
+                split_pdf, job.source_path, output_path,
                 doc["start_page"], doc["end_page"],
             )
             odb = await self.db.execute(

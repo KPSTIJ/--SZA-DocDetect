@@ -1,6 +1,8 @@
+import os
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request, Form, Query as FastQuery
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,14 +13,10 @@ from backend.models.schemas import (
     JobUploadResponse, JobListResponse, JobSummary, JobDetailResponse,
     PageResultResponse, OutputDocumentResponse, JobStatus
 )
-from backend.services.file_service import save_uploaded_file
-
-
-def _parse_job_id(job_id: str) -> uuid.UUID:
-    try:
-        return uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid job ID format")
+from backend.services.file_service import save_content_to_file
+from backend.services.pdf_service import validate_pdf
+from backend.api.utils import parse_job_id
+from backend.config import Settings
 
 
 async def _run_orchestrator(job_id: uuid.UUID, request: Request):
@@ -36,19 +34,33 @@ async def _run_orchestrator(job_id: uuid.UUID, request: Request):
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+MAX_UPLOAD_SIZE = Settings().MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
 @router.post("/upload", response_model=JobUploadResponse, status_code=201)
 async def upload_pdf(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    project_id: UUID | None = Form(None),
+    batch_id: UUID | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large")
+    try:
+        validate_pdf(content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     job_id = uuid.uuid4()
-    source_path = await save_uploaded_file(job_id, file)
+    source_path = save_content_to_file(job_id, content)
     job = ProcessingJob(
         id=job_id,
+        project_id=project_id,
+        batch_id=batch_id,
         source_filename=file.filename,
         source_path=str(source_path),
         status=JobStatus.pending,
@@ -69,10 +81,18 @@ async def upload_pdf(
 
 
 @router.post("/start-batch", status_code=200)
-async def start_batch(background_tasks: BackgroundTasks, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(ProcessingJob).where(ProcessingJob.status == JobStatus.pending)
-    )
+async def start_batch(background_tasks: BackgroundTasks, request: Request, project_id: UUID | None = Form(None), db: AsyncSession = Depends(get_db)):
+    running_query = select(ProcessingJob).where(ProcessingJob.status == JobStatus.running)
+    if project_id:
+        running_query = running_query.where(ProcessingJob.project_id == project_id)
+    running = await db.execute(running_query)
+    if running.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Processing already in progress")
+
+    pending_query = select(ProcessingJob).where(ProcessingJob.status == JobStatus.pending)
+    if project_id:
+        pending_query = pending_query.where(ProcessingJob.project_id == project_id)
+    result = await db.execute(pending_query)
     jobs = result.scalars().all()
     if not jobs:
         raise HTTPException(status_code=400, detail="No pending jobs found")
@@ -88,6 +108,7 @@ async def start_batch(background_tasks: BackgroundTasks, request: Request, db: A
 
 @router.get("", response_model=JobListResponse)
 async def list_jobs(
+    project_id: UUID | None = FastQuery(None),
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -95,6 +116,9 @@ async def list_jobs(
 ):
     query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results))
     count_query = select(func.count(ProcessingJob.id))
+    if project_id:
+        query = query.where(ProcessingJob.project_id == project_id)
+        count_query = count_query.where(ProcessingJob.project_id == project_id)
     if status:
         query = query.where(ProcessingJob.status == status)
         count_query = count_query.where(ProcessingJob.status == status)
@@ -110,6 +134,8 @@ async def list_jobs(
         error_pages = sum(1 for p in pages if p.error_code is not None)
         items.append(JobSummary(
             job_id=str(job.id),
+            project_id=job.project_id,
+            batch_id=job.batch_id,
             source_filename=job.source_filename,
             status=job.status,
             total_pages=total_pages,
@@ -125,7 +151,7 @@ async def get_job_detail(job_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(ProcessingJob)
         .options(selectinload(ProcessingJob.output_documents))
-        .where(ProcessingJob.id == _parse_job_id(job_id))
+        .where(ProcessingJob.id == parse_job_id(job_id))
     )
     job = result.scalar_one_or_none()
     if not job:
@@ -137,6 +163,7 @@ async def get_job_detail(job_id: str, db: AsyncSession = Depends(get_db)):
         doc_types_map = {dt.id: dt.name for dt in dt_result.scalars().all()}
     output_docs = []
     for doc in (job.output_documents or []):
+        output_filename = os.path.basename(doc.output_path) if doc.output_path else None
         output_docs.append(OutputDocumentResponse(
             id=doc.id,
             document_type_id=doc.document_type_id,
@@ -146,6 +173,7 @@ async def get_job_detail(job_id: str, db: AsyncSession = Depends(get_db)):
             end_page=doc.end_page,
             page_count=doc.end_page - doc.start_page + 1,
             output_path=doc.output_path,
+            output_filename=output_filename,
             status=doc.status,
         ))
     return JobDetailResponse(
@@ -162,11 +190,11 @@ async def get_job_detail(job_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{job_id}/pages", response_model=list[PageResultResponse])
 async def get_job_pages(job_id: str, db: AsyncSession = Depends(get_db)):
-    job = await db.get(ProcessingJob, _parse_job_id(job_id))
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     result = await db.execute(
-        select(PageResult).where(PageResult.job_id == _parse_job_id(job_id)).order_by(PageResult.page_number)
+        select(PageResult).where(PageResult.job_id == parse_job_id(job_id)).order_by(PageResult.page_number)
     )
     pages = result.scalars().all()
     type_ids = list(set(p.document_type_id for p in pages if p.document_type_id))
@@ -191,7 +219,7 @@ async def get_job_pages(job_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{job_id}/page/{page_num}/preview")
 async def get_page_preview(job_id: str, page_num: int, db: AsyncSession = Depends(get_db)):
-    job = await db.get(ProcessingJob, _parse_job_id(job_id))
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     from backend.services.file_service import render_and_cache_preview
@@ -204,7 +232,7 @@ async def get_page_preview(job_id: str, page_num: int, db: AsyncSession = Depend
 
 @router.get("/{job_id}/source")
 async def stream_source_pdf(job_id: str, db: AsyncSession = Depends(get_db)):
-    job = await db.get(ProcessingJob, _parse_job_id(job_id))
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     from fastapi.responses import FileResponse
@@ -220,3 +248,18 @@ async def stream_output_pdf(job_id: str, doc_id: int, db: AsyncSession = Depends
         raise HTTPException(status_code=404, detail="Output file not yet generated")
     from fastapi.responses import FileResponse
     return FileResponse(doc.output_path, media_type="application/pdf")
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
+    job = await db.get(ProcessingJob, parse_job_id(job_id))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    import shutil, os
+    if job.source_path and os.path.exists(job.source_path):
+        shutil.rmtree(os.path.dirname(job.source_path), ignore_errors=True)
+    output_base = os.path.join(Settings().OUTPUT_DIR, str(job.id))
+    if os.path.exists(output_base):
+        shutil.rmtree(output_base, ignore_errors=True)
+    await db.delete(job)
+    await db.commit()
