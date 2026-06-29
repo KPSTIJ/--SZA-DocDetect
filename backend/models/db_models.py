@@ -12,6 +12,7 @@ class Project(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
+    final_output_dir = Column(String(500), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 

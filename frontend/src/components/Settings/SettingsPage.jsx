@@ -4,13 +4,15 @@ import DocumentTypeList from './DocumentTypeList';
 import UploadSection from './UploadSection';
 import ProjectBar from '../ProjectBar';
 import useConfigStore from '../../store/configStore';
+import useProjectStore from '../../store/projectStore';
 
 const SettingsPage = () => {
   const fetchDocumentTypes = useConfigStore((s) => s.fetchDocumentTypes);
+  const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
 
   useEffect(() => {
     fetchDocumentTypes();
-  }, [fetchDocumentTypes]);
+  }, [fetchDocumentTypes, selectedProjectId]);
 
   return (
     <Row gutter={[24, 24]}>

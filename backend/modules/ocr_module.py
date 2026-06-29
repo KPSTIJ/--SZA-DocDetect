@@ -64,6 +64,8 @@ class OCRModule:
         text_lower = ocr_text.lower()
         for dt in document_types:
             for pattern in dt.text_patterns:
+                if not isinstance(pattern, str):
+                    continue
                 score = fuzz.partial_ratio(pattern.lower(), text_lower) / 100.0
                 if score >= threshold:
                     matches.append(PatternMatch(

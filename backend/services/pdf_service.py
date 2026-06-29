@@ -20,6 +20,8 @@ def validate_pdf(content: bytes) -> None:
 
 
 def extract_text_layer(pdf_path: str) -> list[dict]:
+    if not Path(pdf_path).exists():
+        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
     doc = fitz.open(pdf_path)
     result = []
     for page_num in range(len(doc)):
@@ -36,6 +38,8 @@ def extract_text_layer(pdf_path: str) -> list[dict]:
 
 
 def render_page_to_image(pdf_path: str, page_num: int, dpi: int = 200) -> np.ndarray | None:
+    if not Path(pdf_path).exists():
+        return None
     doc = fitz.open(pdf_path)
     if page_num < 0 or page_num >= len(doc):
         doc.close()

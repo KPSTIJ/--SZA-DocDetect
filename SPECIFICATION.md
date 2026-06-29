@@ -1859,11 +1859,56 @@ VITE_API_BASE_URL=/api
 - UUID генерация `batch_id` с полифиллом для старых браузеров
 - `destroyOnClose` → `destroyOnHidden` (deprecation antd)
 - CSS: `--accent`, `--bg-elevated`, скроллбар, стрелки селектов
+- `from backend.config import Settings` — фикс 500 при DELETE
+- `review_routes.py` — `request.app.state.settings` вместо `Settings()`
+- `jobStore.js` — JSON.stringify сравнение для предотвращения лишних ререндеров
+- `pdf_service.py` — проверка `Path.exists()` перед открытием (404 вместо 500)
+- `main.py` — `e2e`/`pipeline` работают с `test.db`, не трогают прод
+- Алембик: динамический `sqlalchemy.url` из `settings.DATABASE_URL`
+- `ProjectUpdate` — `@model_validator` для `max_pages >= min_pages`
+- `datetime.utcnow()` → `datetime.now(timezone.utc)` (депрекейт)
+- Жёстко зашитый `0.65` → `config.FUSION_VLM_ESCALATION_THRESHOLD: float = 0.70`
+- `render_page_to_image` — проверка `raw_img is None`
+- `text_layer.py` + `ocr_module.py` — `isinstance(pattern, str)` for JSON safety
 
 ### Alembic миграции
 - Единая миграция `d4ac9a505606_initial` (5 таблиц, все актуальные колонки)
 - Авто-применение в lifespan бэкенда
 - `python main.py db-migrate` — ручное применение
+
+### SMB интеграция
+- `smb_service.py` — подключение к SMB-шаре через `smbprotocol`: `list_folders()`, `create_folder()`, `save_file()`
+- `smb_routes.py` — `GET /api/smb/folders?path=` и `POST /api/smb/folders`
+- Корень: `SMB_ROOT=cv_results` из `.env`. Нельзя подняться выше
+- `FolderBrowser.jsx` — модальное окно с навигацией по папкам, breadcrumbs, создание папок, выбор
+- Кнопка «Выбрать папку для выгрузки» в UploadSection → открывает FolderBrowser
+- Оркестратор: `_save_to_smb()` — после обработки копирует `{stem}__MAIN.pdf` + все разрезанные PDF в SMB
+- `save_file()` создаёт недостающие директории через `_ensure_dir()`
+
+### Распределение статусов
+- `error_pages` не считает `invalid_length` (тип документа определён, длина невалидна)
+- RED (`#d13a3a`): `error_pages === total_pages` — «Не распознано»
+- ORANGE (`#d4943a`): `error_pages > 0` — «Частичные ошибки»
+- GREEN (`#2ea86b`): `error_pages === 0` — «Корректно»
+- `_assign_document_boundaries` игнорирует `invalid_length` при определении `has_error`
+
+### Dev-консоль
+- `DevConsole.jsx` — панель логов по `Shift+Alt+M`
+- `log_routes.py` — in-memory лог-буфер на 500 строк
+- `setup_log_handler()` вызывается в lifespan бэкенда
+- Цветовая подсветка: ERROR=#d13a3a, WARNING=#d4943a, orchestrator=#4a9eff, DEBUG=серый
+
+### Группировка типов по смежности
+- `groupPagesByType` — последовательные блоки одного типа показываются раздельно
+- Один тип в разных частях досье → разные группы в UI
+
+### Загрузка без автостарта
+- `upload_pdf`: удалён `background_tasks.add_task(_run_orchestrator)`
+- Обработка запускается только по `POST /api/jobs/start-batch`
+
+### Вкладка «В обработке»
+- Фильтр `processing` в `FILTERS` (серый, справа от других вкладок)
+- Показывает досье с `status === 'running' | 'pending'`
 
 
 ## ИТОГОВЫЙ ЧЕКЛИСТ ПОДЗАДАЧ
@@ -1897,3 +1942,9 @@ VITE_API_BASE_URL=/api
 | 25 | **Non-blocking пайплайн** | `asyncio.to_thread()` в `orchestrator.py` | API отвечает во время обработки |
 | 26 | **Фильтры Разбор** | `ReviewPage.jsx` | Проект + Загрузка + Поиск |
 | 27 | **Прогрессбар 5 сегментов** | `App.jsx` | pending/running/done/review/failed |
+| 28 | **SMB интеграция** | `smb_service.py`, `smb_routes.py`, `FolderBrowser.jsx` | Запись/чтение SMB-шары, браузер папок |
+| 29 | **Статусы досье** | `ReviewPage.jsx`, `DossierModal.jsx` | RED/ORANGE/GREEN по `error_pages` |
+| 30 | **Dev-консоль** | `DevConsole.jsx`, `log_routes.py` | Shift+Alt+M, лог-буфер |
+| 31 | **Загрузка без автостарта** | `job_routes.py` | Обработка только по «Запустить» |
+| 32 | **Независимый фильтр проекта** | `jobStore.js`, `ReviewPage.jsx` | Фильтр в Разборе не зависит от ProjectBar |
+| 33 | **Вкладка «В обработке»** | `ReviewPage.jsx` | running/pending фильтр |

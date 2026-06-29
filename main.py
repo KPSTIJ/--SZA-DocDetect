@@ -41,7 +41,12 @@ def cmd_test():
 def cmd_e2e():
     """Запустить E2E-тест API (создаёт временный сервер)."""
     sys.path.insert(0, ROOT_DIR)
-    _cleanup_db()
+    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+    os.environ["INPUT_DIR"] = "./data/test_input"
+    os.environ["OUTPUT_DIR"] = "./data/test_output"
+    os.environ["TEMP_DIR"] = "./data/test_temp"
+    _cleanup_test_db()
+    _cleanup_test_data()
 
     import asyncio
     import io
@@ -136,7 +141,7 @@ def cmd_e2e():
         server.should_exit = True
         await task
 
-        _cleanup_data()
+        _cleanup_test_data()
         print(f"\n{'='*40}")
         print(f"Results: {passed} passed, {failed} failed")
         return failed == 0
@@ -148,7 +153,12 @@ def cmd_e2e():
 def cmd_pipeline():
     """Протестировать полный пайплайн обработки PDF (без ML-модулей)."""
     sys.path.insert(0, ROOT_DIR)
-    _cleanup_db()
+    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+    os.environ["INPUT_DIR"] = "./data/test_input"
+    os.environ["OUTPUT_DIR"] = "./data/test_output"
+    os.environ["TEMP_DIR"] = "./data/test_temp"
+    _cleanup_test_db()
+    _cleanup_test_data()
     os.chdir(BACKEND_DIR)
 
     import asyncio
@@ -230,7 +240,7 @@ def cmd_pipeline():
             print("\nPipeline test: PASSED (text_layer working, ML modules skipped)")
 
         await engine.dispose()
-        _cleanup_data()
+        _cleanup_test_data()
 
     asyncio.run(_run())
 
@@ -247,8 +257,14 @@ def cmd_db_migrate():
 
 
 def cmd_db_init():
-    """Пересоздать БД."""
-    _cleanup_db()
+    """Пересоздать БД (ВНИМАНИЕ: удаляет все данные!)."""
+    answer = input("Это удалит app.db и все данные. Продолжить? (y/N): ")
+    if answer.lower() != 'y':
+        print("Отменено")
+        return
+    for path in [os.path.join(BACKEND_DIR, "app.db"), os.path.join(ROOT_DIR, "app.db")]:
+        if os.path.exists(path):
+            os.remove(path)
     sys.path.insert(0, ROOT_DIR)
     os.chdir(BACKEND_DIR)
 
@@ -355,15 +371,15 @@ def cmd_shell():
     code.interact(local=vars, banner="")
 
 
-def _cleanup_db():
-    for path in [os.path.join(BACKEND_DIR, "app.db"), os.path.join(ROOT_DIR, "app.db")]:
-        if os.path.exists(path):
-            os.remove(path)
+def _cleanup_test_db():
+    test_db = os.path.join(ROOT_DIR, "test.db")
+    if os.path.exists(test_db):
+        os.remove(test_db)
 
 
-def _cleanup_data():
+def _cleanup_test_data():
     import shutil
-    for d in ["./data"]:
+    for d in ["./data/test_input", "./data/test_output", "./data/test_temp"]:
         p = os.path.join(ROOT_DIR, d)
         if os.path.exists(p):
             shutil.rmtree(p, ignore_errors=True)

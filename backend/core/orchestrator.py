@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import select
@@ -47,6 +47,7 @@ class DocumentOrchestrator:
         logger.info("Job %s — starting processing", job_id)
         try:
             job.status = "running"
+            job.finished_at = None
             await self.db.commit()
             await self._process_pipeline(job)
         except Exception as e:
@@ -102,6 +103,13 @@ class DocumentOrchestrator:
                 raw_img = await asyncio.to_thread(
                     render_page_to_image, pdf_path, page_num, self.settings.PDF_RENDER_DPI
                 )
+                if raw_img is None:
+                    logger.warning("Job %s — render_page_to_image returned None for page %d", job.id, page_num)
+                    fusion_assignments[page_num] = PageAssignment(
+                        page_number=page_num, doc_type_id=None, is_title_page=False,
+                        error_code="undetected", detection_method="fusion", confidence=0.0,
+                    )
+                    continue
                 ocr_img = await asyncio.to_thread(enhance_for_ocr, raw_img)
                 cv_img = await asyncio.to_thread(enhance_for_cv, raw_img)
 
@@ -129,7 +137,7 @@ class DocumentOrchestrator:
 
         need_vlm: set[int] = set()
         for page_num, a in fusion_assignments.items():
-            if a.doc_type_id is None or a.confidence < 0.65:
+            if a.doc_type_id is None or a.confidence < self.settings.FUSION_VLM_ESCALATION_THRESHOLD:
                 need_vlm.add(page_num)
 
         vlm_assignments: dict[int, PageAssignment] = {}
@@ -174,7 +182,7 @@ class DocumentOrchestrator:
         for page_num in range(total_pages):
             if page_num in vlm_assignments:
                 final_assignments.append(vlm_assignments[page_num])
-            elif page_num in fusion_assignments and page_num in need_fusion:
+            elif page_num in fusion_assignments:
                 final_assignments.append(fusion_assignments[page_num])
             elif page_num in tl_assignments:
                 final_assignments.append(tl_assignments[page_num])
@@ -199,15 +207,89 @@ class DocumentOrchestrator:
 
         has_problems = any(d["status"] != "ok" for d in output_docs)
         job.status = "needs_review" if has_problems else "done"
-        job.finished_at = datetime.utcnow()
+        job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.db.commit()
+
+        await self._save_final_output(job, ok_docs)
         logger.info("Job %s — finished, status=%s", job.id, job.status)
+
+    async def _save_final_output(self, job: ProcessingJob, ok_docs: list[dict]) -> None:
+        project = await self.db.get(Project, job.project_id) if job.project_id else None
+        if not project or project.final_output_dir is None:
+            return
+        from pathlib import Path
+        stem = Path(job.source_filename).stem
+        if self.settings.SMB_USERNAME and self.settings.SMB_PASSWORD:
+            await self._save_to_smb(job, ok_docs, project.final_output_dir, stem)
+        else:
+            await self._save_to_local(job, ok_docs, project.final_output_dir, stem)
+
+    async def _save_to_smb(self, job, ok_docs, rel_path: str, stem: str):
+        from backend.services import smb_service
+        import os
+        subdir = f"{rel_path}/{stem}".strip("/") if rel_path else stem
+
+        if job.source_path and os.path.exists(job.source_path):
+            with open(job.source_path, "rb") as f:
+                smb_service.save_file(self.settings, subdir, f"{stem}__MAIN.pdf", f.read())
+
+        for doc in ok_docs:
+            filename = build_output_filename(
+                job.source_filename, doc["doc_type_id"], doc["occurrence_index"]
+            )
+            src = Path(self.settings.OUTPUT_DIR) / str(job.id) / filename
+            if src.exists():
+                with open(str(src), "rb") as f:
+                    smb_service.save_file(self.settings, subdir, filename, f.read())
+            odb = await self.db.execute(
+                select(OutputDocument).where(
+                    OutputDocument.job_id == job.id,
+                    OutputDocument.document_type_id == doc["doc_type_id"],
+                    OutputDocument.occurrence_index == doc["occurrence_index"],
+                )
+            )
+            od = odb.scalar_one_or_none()
+            if od:
+                od.output_path = f"{subdir}/{filename}"
+        await self.db.commit()
+        logger.info("Job %s — saved to SMB: %s", job.id, subdir)
+
+    async def _save_to_local(self, job, ok_docs, rel_path, stem):
+        import shutil, os
+        dest_dir = Path(rel_path) / stem if rel_path else Path(stem)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        main_dest = dest_dir / f"{stem}__MAIN.pdf"
+        if job.source_path and os.path.exists(job.source_path):
+            shutil.copy2(job.source_path, str(main_dest))
+
+        for doc in ok_docs:
+            filename = build_output_filename(
+                job.source_filename, doc["doc_type_id"], doc["occurrence_index"]
+            )
+            src = Path(self.settings.OUTPUT_DIR) / str(job.id) / filename
+            if src.exists():
+                shutil.copy2(str(src), str(dest_dir / filename))
+                odb = await self.db.execute(
+                    select(OutputDocument).where(
+                        OutputDocument.job_id == job.id,
+                        OutputDocument.document_type_id == doc["doc_type_id"],
+                        OutputDocument.occurrence_index == doc["occurrence_index"],
+                    )
+                )
+                od = odb.scalar_one_or_none()
+                if od:
+                    od.output_path = str(dest_dir / filename)
+        await self.db.commit()
+        logger.info("Job %s — saved to local: %s", job.id, dest_dir)
 
     def _revalidate_lengths(
         self,
         assignments: list[PageAssignment],
-        doc_types: dict[str, object],
+        doc_types: dict[str, any],
     ) -> list[PageAssignment]:
+        import copy
+        assignments = [copy.copy(a) for a in assignments]
         segments = []
         current_type = None
         current_segment = []
@@ -290,7 +372,7 @@ class DocumentOrchestrator:
                 current_start = i
                 has_error = False
 
-            if a.error_code:
+            if a.error_code and a.error_code != 'invalid_length':
                 has_error = True
 
         if current_type is not None:
@@ -351,6 +433,8 @@ class DocumentOrchestrator:
             ))
         docs = self._assign_document_boundaries(assignments)
         await self._assemble_pdfs(job, docs)
+        ok_docs = [d for d in docs if d["status"] == "ok"]
+        await self._save_final_output(job, ok_docs)
         result = await self.db.execute(
             select(OutputDocument).where(OutputDocument.job_id == job_id)
         )

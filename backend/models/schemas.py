@@ -6,11 +6,18 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
+    final_output_dir: str | None = None
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    final_output_dir: str | None = None
 
 
 class ProjectResponse(BaseModel):
     id: UUID
     name: str
+    final_output_dir: str | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +65,13 @@ class DocumentTypeUpdate(BaseModel):
     min_pages: int | None = Field(None, ge=1)
     max_pages: int | None = Field(None, ge=1)
     visual_hints: dict | None = None
+
+    @model_validator(mode='after')
+    def check_page_range(self):
+        if self.min_pages is not None and self.max_pages is not None:
+            if self.max_pages < self.min_pages:
+                raise ValueError("max_pages должен быть >= min_pages")
+        return self
 
 
 class DocumentTypeResponse(BaseModel):
@@ -156,6 +170,7 @@ class ReviewStats(BaseModel):
     needs_review_count: int = 0
     done_count: int = 0
     failed_count: int = 0
+    in_progress_count: int = 0
     total_pages_processed: int = 0
     total_error_pages: int = 0
 
@@ -164,4 +179,5 @@ class ReviewJobsResponse(BaseModel):
     needs_review: list[JobSummary] = []
     done: list[JobSummary] = []
     failed: list[JobSummary] = []
+    in_progress: list[JobSummary] = []
     stats: ReviewStats

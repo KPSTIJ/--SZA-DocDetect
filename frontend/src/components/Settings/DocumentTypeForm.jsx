@@ -7,11 +7,12 @@ const DocumentTypeForm = ({ initialValues, onSuccess }) => {
   const { createDocumentType, updateDocumentType } = useConfigStore();
 
   const handleFinish = async (values) => {
+    const normalized = { ...values, text_patterns: (values.text_patterns || []).map(p => p.trim()).filter(Boolean) };
     try {
       if (initialValues) {
-        await updateDocumentType(initialValues.id, values);
+        await updateDocumentType(initialValues.id, normalized);
       } else {
-        await createDocumentType(values);
+        await createDocumentType(normalized);
       }
       onSuccess?.();
     } catch (e) {

@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request, Form, Query as FastQuery
 from sqlalchemy import select, func
@@ -34,13 +34,9 @@ async def _run_orchestrator(job_id: uuid.UUID, request: Request):
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-MAX_UPLOAD_SIZE = Settings().MAX_UPLOAD_SIZE_MB * 1024 * 1024
-
-
 @router.post("/upload", response_model=JobUploadResponse, status_code=201)
 async def upload_pdf(
     request: Request,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     project_id: UUID | None = Form(None),
     batch_id: UUID | None = Form(None),
@@ -49,8 +45,13 @@ async def upload_pdf(
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
+    max_size = request.app.state.settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if len(content) > max_size:
         raise HTTPException(status_code=413, detail="File too large")
+
+    type_count = await db.scalar(select(func.count(DocumentType.id)))
+    if not type_count:
+        raise HTTPException(status_code=400, detail="Сначала создайте хотя бы один тип документа")
     try:
         validate_pdf(content)
     except ValueError as e:
@@ -64,13 +65,11 @@ async def upload_pdf(
         source_filename=file.filename,
         source_path=str(source_path),
         status=JobStatus.pending,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(job)
     await db.commit()
     await db.refresh(job)
-
-    background_tasks.add_task(_run_orchestrator, job.id, request)
 
     return JobUploadResponse(
         job_id=str(job.id),
@@ -131,7 +130,7 @@ async def list_jobs(
     for job in jobs:
         pages = job.page_results or []
         total_pages = len(pages)
-        error_pages = sum(1 for p in pages if p.error_code is not None)
+        error_pages = sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length')
         items.append(JobSummary(
             job_id=str(job.id),
             project_id=job.project_id,
@@ -223,7 +222,10 @@ async def get_page_preview(job_id: str, page_num: int, db: AsyncSession = Depend
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     from backend.services.file_service import render_and_cache_preview
-    preview_path = render_and_cache_preview(job.source_path, job_id, page_num, dpi=100)
+    try:
+        preview_path = render_and_cache_preview(job.source_path, job_id, page_num, dpi=100)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Preview not available")
     if not preview_path:
         raise HTTPException(status_code=404, detail="Page not found")
     from fastapi.responses import FileResponse

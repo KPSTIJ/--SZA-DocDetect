@@ -46,7 +46,7 @@ project/
 │   ├── api/                 # config_routes, job_routes, review_routes
 │   ├── core/                # orchestrator.py
 │   ├── modules/             # text_layer, ocr_module, cv_module, vlm_module, fusion
-│   ├── services/            # pdf_service.py, file_service.py
+│   ├── services/            # pdf_service.py, file_service.py, smb_service.py
 │   └── tests/               # unit-тесты (15 шт.)
 ├── frontend/
 │   ├── index.html
@@ -59,7 +59,8 @@ project/
 │       ├── store/           # configStore.js, jobStore.js
 │       └── components/
 │           ├── PdfViewerPanel.jsx  # Просмотрщик исходного PDF
-│           ├── Settings/    # SettingsPage, DocumentTypeList, DocumentTypeForm, UploadSection
+│           ├── DevConsole.jsx     # Dev-консоль (Shift+Alt+M)
+│           ├── Settings/    # SettingsPage, DocumentTypeList, DocumentTypeForm, UploadSection, FolderBrowser
 │           ├── Review/      # ReviewPage, DossierModal, PageTile, FloatingAssignToolbar
 │           └── Layout/      # AppHeader, Icons
 ```
@@ -111,7 +112,7 @@ project/
 - Визуальный редизайн UI, перевод на русский
 - Inline JSON-парсинг в VLM-модуле
 
-### PdfViewerPanel — просмотрщик исходного PDF
+- **PdfViewerPanel — просмотрщик исходного PDF**
 
 - Фиксированная панель справа, ширина по пропорциям A4: `(100vh − 100px) × 210 / 297 + 40px`
 - Одна страница за раз, `objectFit: contain`, `maxHeight: 100%`
@@ -152,6 +153,15 @@ project/
 - **Скроллбар**: кастомный `::-webkit-scrollbar` для тёмной (#5a5e66) и светлой (#d0d0d0) темы
 - **Select/Input**: цвета в тёмной теме
 - **Тёмная тема**: корректное отображение всех элементов, CSS-переменные
+- **SMB интеграция** — `smb_service.py`, `smb_routes.py`: чтение/создание папок, сохранение файлов на SMB-шару через smbprotocol
+- **Браузер папок SMB** — `FolderBrowser.jsx`: модальное окно с навигацией по папкам, breadcrumbs, создание папок
+- **Выбор финальной директории** — кнопка «Выбрать папку для выгрузки» → модалка-браузер. Корень `cv_results`, нельзя подняться выше
+- **Dev-консоль** — `DevConsole.jsx` + `log_routes.py`: лог-панель по `Shift+Alt+M`. In-memory буфер последних 500 строк логов
+- **Распределение статусов** — RED: `error_pages === total_pages` («Не распознано»), ORANGE: `error_pages > 0` («Частичные ошибки»). `invalid_length` не считается ошибкой
+- **Группировка типов по смежности** — одинаковые типы в несмежных сегментах показываются отдельно с нумерацией
+- **VLM таймаут** — 60с (было 120с)
+- **Загрузка без автостарта** — обработка только по «Запустить обработку», не сразу после загрузки
+- **Вкладка «В обработке»** — фильтр для running/pending досье справа от остальных вкладок
 
 ---
 
@@ -200,8 +210,11 @@ docker compose -f docker-compose.deploy.yml up -d
 - Устойчивость при недоступном Ollama
 
 ### Известные проблемы:
-- VQM ошибка `"this model does not support pdf input"` при классификации страниц через VLM
+- VLM ошибка `"this model does not support pdf input"` при классификации страниц через VLM (если модель не поддерживает изображения)
 - DocumentType `id` (alias) — глобальный PK, а не составной `(project_id, id)`. Два проекта не могут иметь тип с одинаковым alias
+- PaddleOCR не thread-safe — FUSION обрабатывает страницы последовательно (один экземпляр PaddleOCR на процесс)
+- `SMB_ROOT` фиксирован в `.env`, нельзя изменить через UI
+- SMB-сессия создаётся заново для каждого запроса (нет пула соединений)
 
 ### Улучшения:
 - Интеграционные тесты (папка `tests/integration/` пуста)

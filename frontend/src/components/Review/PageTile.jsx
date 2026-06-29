@@ -46,7 +46,7 @@ const PageTile = ({ jobId, page, isSelected, onToggleSelect, onClickPreview }) =
           borderRadius: 8, cursor: 'pointer',
           background: 'var(--bg-elevated)',
           border: isSelected ? '2px solid var(--accent)' : hover ? '2px solid #ffffff' : '1px solid var(--border)',
-          boxShadow: isSelected ? '0 0 0 6px #3dbf7d' : 'none',
+          boxShadow: isSelected ? '0 0 0 6px var(--accent)' : 'none',
           transition: 'border 0.15s, border-color 0.15s, box-shadow 0.15s',
         }}
       >

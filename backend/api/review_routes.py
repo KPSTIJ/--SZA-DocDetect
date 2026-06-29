@@ -1,6 +1,6 @@
 import os
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,12 +32,13 @@ async def list_review_jobs(
     needs_review = []
     done_jobs = []
     failed_jobs = []
+    in_progress = []
     total_pages = 0
     total_error = 0
     for job in all_jobs:
         pages = job.page_results or []
         total_pages += len(pages)
-        total_error += sum(1 for p in pages if p.error_code is not None)
+        total_error += sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length')
         js = JobSummary(
             job_id=str(job.id),
             project_id=job.project_id,
@@ -45,7 +46,7 @@ async def list_review_jobs(
             source_filename=job.source_filename,
             status=job.status,
             total_pages=len(pages),
-            error_pages=sum(1 for p in pages if p.error_code is not None),
+            error_pages=sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length'),
             created_at=job.created_at,
             finished_at=job.finished_at,
         )
@@ -55,15 +56,19 @@ async def list_review_jobs(
             done_jobs.append(js)
         elif job.status == JobStatus.failed:
             failed_jobs.append(js)
+        elif job.status in (JobStatus.pending, JobStatus.running):
+            in_progress.append(js)
     return ReviewJobsResponse(
         needs_review=needs_review,
         done=done_jobs,
         failed=failed_jobs,
+        in_progress=in_progress,
         stats=ReviewStats(
             total_jobs=len(all_jobs),
             needs_review_count=len(needs_review),
             done_count=len(done_jobs),
             failed_count=len(failed_jobs),
+            in_progress_count=len(in_progress),
             total_pages_processed=total_pages,
             total_error_pages=total_error,
         ),
@@ -94,18 +99,17 @@ async def patch_job_pages(job_id: str, data: ReviewPatchRequest, db: AsyncSessio
 
 
 @router.post("/jobs/{job_id}/confirm", response_model=ReviewConfirmResponse)
-async def confirm_job(job_id: str, db: AsyncSession = Depends(get_db)):
+async def confirm_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     job = await db.get(ProcessingJob, parse_job_id(job_id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     from backend.core.orchestrator import DocumentOrchestrator
-    from backend.config import Settings
-    settings = Settings()
+    settings = request.app.state.settings
     orch = DocumentOrchestrator(db, settings)
     output_docs = await orch.assemble_after_review(job.id)
-    from datetime import datetime
+    from datetime import datetime, timezone
     job.status = JobStatus.done
-    job.finished_at = datetime.utcnow()
+    job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
 
     type_ids = list(set(doc.document_type_id for doc in output_docs if doc.document_type_id))

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Table, Button, Space, Modal, message, Tooltip } from 'antd';
+import { Table, Button, Space, Modal, message, Tooltip, App } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import DocumentTypeForm from './DocumentTypeForm';
 import useConfigStore from '../../store/configStore';
@@ -10,6 +10,7 @@ const DocumentTypeList = () => {
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [apiModal, apiModalCtx] = Modal.useModal();
 
   const handleEdit = (record) => {
     setEditing(record);
@@ -17,7 +18,7 @@ const DocumentTypeList = () => {
   };
 
   const handleDelete = (id) => {
-    Modal.confirm({
+    apiModal.confirm({
       title: 'Удалить тип документа?',
       icon: null,
       content: (
@@ -127,7 +128,7 @@ const DocumentTypeList = () => {
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={520}
       >
         <DocumentTypeForm
@@ -138,6 +139,7 @@ const DocumentTypeList = () => {
           }}
         />
       </Modal>
+      {apiModalCtx}
     </div>
   );
 };

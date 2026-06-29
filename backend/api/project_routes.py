@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models.db_models import Project
-from backend.models.schemas import ProjectCreate, ProjectResponse
+from backend.models.schemas import ProjectCreate, ProjectUpdate, ProjectResponse
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -33,3 +33,19 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
     await db.delete(project)
     await db.commit()
+
+
+@router.put("/{project_id}", response_model=ProjectResponse)
+async def update_project(project_id: str, data: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+    from backend.api.utils import parse_job_id
+    pid = parse_job_id(project_id)
+    project = await db.get(Project, pid)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if data.name is not None:
+        project.name = data.name
+    if data.final_output_dir is not None:
+        project.final_output_dir = data.final_output_dir
+    await db.commit()
+    await db.refresh(project)
+    return project

@@ -4,7 +4,7 @@ import useProjectStore from './projectStore';
 
 const useJobStore = create((set, get) => ({
   jobs: [],
-  reviewJobs: { needs_review: [], done: [], failed: [], stats: {} },
+  reviewJobs: { needs_review: [], done: [], failed: [], in_progress: [], stats: {} },
   loading: false,
   pollingInterval: null,
   selectedPages: {},
@@ -57,13 +57,20 @@ const useJobStore = create((set, get) => ({
     const params = { limit: 100 };
     if (projectId) params.project_id = projectId;
     const res = await jobsApi.getJobs(params);
-    set({ jobs: res.data.items });
+    const next = res.data.items;
+    const prev = get().jobs;
+    if (JSON.stringify(prev) !== JSON.stringify(next)) {
+      set({ jobs: next });
+    }
   },
 
   fetchReviewJobs: async (projectId) => {
-    const pid = projectId || useProjectStore.getState().selectedProjectId;
-    const res = await jobsApi.getReviewJobs(pid);
-    set({ reviewJobs: res.data });
+    const res = await jobsApi.getReviewJobs(projectId || undefined);
+    const next = res.data;
+    const prev = get().reviewJobs;
+    if (JSON.stringify(prev) !== JSON.stringify(next)) {
+      set({ reviewJobs: next });
+    }
   },
 
   startPolling: () => {

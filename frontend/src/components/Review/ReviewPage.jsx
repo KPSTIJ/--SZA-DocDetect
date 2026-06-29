@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Row, Col, Button, Tooltip, Space, Select, Input, Modal } from 'antd';
+import { Card, Row, Col, Button, Tooltip, Space, Select, Input, Modal, App } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
   EyeOutlined, SearchOutlined, DeleteOutlined,
@@ -8,37 +8,43 @@ import useJobStore from '../../store/jobStore';
 import useProjectStore from '../../store/projectStore';
 import DossierModal from './DossierModal';
 
-const getJobColor = (job) => {
+  const getJobColor = (job) => {
   if (job.status === 'failed') return { strip: '#d13a3a', label: 'Ошибка' };
+  if (job.status === 'running') return { strip: '#7a818a', label: 'Обрабатывается' };
+  if (job.status === 'pending') return { strip: '#9ca0a8', label: 'Ожидает' };
+  const allPages = job.total_pages || 0;
+  if (allPages > 0 && job.error_pages === allPages) return { strip: '#d13a3a', label: 'Не распознано' };
   if (job.error_pages > 0) return { strip: '#d4943a', label: 'Частичные ошибки' };
   return { strip: '#2ea86b', label: 'Корректно' };
-};
+  };
 
 const FILTERS = [
   { key: 'all', label: 'Все', color: 'var(--text-secondary)' },
   { key: 'errors', label: 'Нужна проверка', color: '#d4943a' },
   { key: 'failed', label: 'Ошибка', color: '#d13a3a' },
   { key: 'ok', label: 'Корректные', color: '#2ea86b' },
+  { key: 'processing', label: 'В обработке', color: '#7a818a' },
 ];
 
 const ReviewPage = () => {
   const { reviewJobs, fetchReviewJobs, deleteJob, openPdfViewer } = useJobStore();
   const projects = useProjectStore((s) => s.projects);
-
-  useEffect(() => {
-    fetchReviewJobs();
-  }, [fetchReviewJobs]);
-
+  const [apiModal, apiModalCtx] = Modal.useModal();
   const [filterTab, setFilterTab] = useState('all');
   const [filterProjectId, setFilterProjectId] = useState(null);
   const [filterBatchId, setFilterBatchId] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [dossierModal, setDossierModal] = useState({ open: false, job: null });
 
+  useEffect(() => {
+    fetchReviewJobs(filterProjectId);
+  }, [fetchReviewJobs, filterProjectId]);
+
   const allJobs = [
     ...(reviewJobs.needs_review || []),
     ...(reviewJobs.done || []),
     ...(reviewJobs.failed || []),
+    ...(reviewJobs.in_progress || []),
   ];
 
   const batchOptions = useMemo(() => {
@@ -77,21 +83,23 @@ const ReviewPage = () => {
 
   const countByFilter = useMemo(() => {
     const all = filteredBySearch.length;
-    const errors = filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed').length;
+    const errors = filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed' && j.status !== 'running' && j.status !== 'pending').length;
     const failed = filteredBySearch.filter(j => j.status === 'failed').length;
     const ok = filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
-    return { all, errors, failed, ok };
+    const processing = filteredBySearch.filter(j => j.status === 'running' || j.status === 'pending').length;
+    return { all, errors, failed, ok, processing };
   }, [filteredBySearch]);
 
   const filteredJobs = (() => {
-    if (filterTab === 'errors') return filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed');
+    if (filterTab === 'errors') return filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed' && j.status !== 'running' && j.status !== 'pending');
     if (filterTab === 'failed') return filteredBySearch.filter(j => j.status === 'failed');
     if (filterTab === 'ok') return filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0);
+    if (filterTab === 'processing') return filteredBySearch.filter(j => j.status === 'running' || j.status === 'pending');
     return filteredBySearch;
   })();
 
   const handleDelete = (job) => {
-    Modal.confirm({
+    apiModal.confirm({
       title: 'Удалить загрузку?',
       content: `Удалить "${job.source_filename}"?`,
       okText: 'Удалить',
@@ -201,7 +209,10 @@ const ReviewPage = () => {
                     <Card
                       size="small"
                       hoverable
-                      onClick={() => setDossierModal({ open: true, job })}
+                      onClick={() => {
+                        if (job.project_id) setFilterProjectId(job.project_id);
+                        setDossierModal({ open: true, job });
+                      }}
                       style={{
                         borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
                         border: '1px solid var(--border)', background: 'var(--bg-card)', height: '100%',
@@ -243,6 +254,7 @@ const ReviewPage = () => {
         job={dossierModal.job}
         onClose={() => setDossierModal({ open: false, job: null })}
       />
+      {apiModalCtx}
     </div>
   );
 };

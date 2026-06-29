@@ -28,7 +28,7 @@ def find_title_pages_by_text(
         text_lower = page["text"].lower()
         for dt in document_types:
             for pattern in dt.text_patterns:
-                if pattern.lower() in text_lower:
+                if isinstance(pattern, str) and pattern.lower() in text_lower:
                     matches.append(TitlePageMatch(
                         page_num=page["page"],
                         doc_type_id=dt.id,
@@ -41,7 +41,7 @@ def find_title_pages_by_text(
 def assign_pages_from_title_pages(
     title_pages: list[TitlePageMatch],
     total_pages: int,
-    document_types: dict[str, object],
+    document_types: dict[str, any],
 ) -> list[PageAssignment]:
     assignments = []
     title_pages.sort(key=lambda x: x.page_num)

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Select, Button, Modal, Input, message } from 'antd';
+import { Select, Button, Modal, Input, message, App } from 'antd';
 import useProjectStore from '../store/projectStore';
 
 const ProjectBar = () => {
   const { projects, selectedProjectId, loading, fetchProjects, createProject, setSelectedProject } = useProjectStore();
+  const { message: appMsg } = App.useApp();
   const [modalOpen, setModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -18,12 +19,12 @@ const ProjectBar = () => {
     setCreating(true);
     try {
       await createProject(name);
-      message.success('Проект создан');
+      appMsg.success('Проект создан');
       setModalOpen(false);
       setNewName('');
     } catch (e) {
       const msg = e?.response?.data?.detail || e?.message || 'Не удалось создать проект';
-      message.error(msg);
+      appMsg.error(msg);
     } finally {
       setCreating(false);
     }
@@ -49,7 +50,7 @@ const ProjectBar = () => {
           Создать проект
         </Button>
       </div>
-        <Modal
+      <Modal
           title={<span style={{ color: 'var(--text)', fontWeight: 600 }}>Новый проект</span>}
           open={modalOpen}
           onCancel={() => setModalOpen(false)}
@@ -57,7 +58,7 @@ const ProjectBar = () => {
           okText="Создать"
           cancelText="Отмена"
           confirmLoading={creating}
-          destroyOnClose
+          destroyOnHidden
         >
         <Input
           placeholder="Название проекта"

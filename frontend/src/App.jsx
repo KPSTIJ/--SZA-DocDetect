@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ConfigProvider, Tag } from 'antd';
+import { ConfigProvider, Tag, App as AntApp } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { lightTheme, darkTheme } from './theme';
 import SettingsPage from './components/Settings/SettingsPage';
 import ReviewPage from './components/Review/ReviewPage';
 import AppHeader from './components/Layout/AppHeader';
 import PdfViewerPanel from './components/PdfViewerPanel';
+import DevConsole from './components/DevConsole';
 
 import useJobStore from './store/jobStore';
 import useProjectStore from './store/projectStore';
@@ -46,15 +47,20 @@ const App = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const calcWidth = () => Math.round((window.innerHeight - 100) * 210 / 297 + 40);
-    const w = pdfViewer.open ? `${calcWidth()}px` : '';
-    document.body.style.paddingRight = w;
-    document.body.style.setProperty('--panel-width', w);
-    if (pdfViewer.open) {
-      document.body.setAttribute('data-panel-open', '');
-    } else {
-      document.body.removeAttribute('data-panel-open');
-    }
+    const applyWidth = () => {
+      const w = pdfViewer.open ? `${calcWidth()}px` : '';
+      document.body.style.paddingRight = w;
+      document.body.style.setProperty('--panel-width', w);
+      if (pdfViewer.open) {
+        document.body.setAttribute('data-panel-open', '');
+      } else {
+        document.body.removeAttribute('data-panel-open');
+      }
+    };
+    applyWidth();
+    window.addEventListener('resize', applyWidth);
     return () => {
+      window.removeEventListener('resize', applyWidth);
       document.body.style.paddingRight = '';
       document.body.style.removeProperty('--panel-width');
       document.body.removeAttribute('data-panel-open');
@@ -73,7 +79,8 @@ const App = () => {
   const theme = dark ? darkTheme : lightTheme;
   return (
     <ConfigProvider theme={theme}>
-      <div style={{ minHeight: '100vh', fontSize: 15 }} data-theme={dark ? 'dark' : 'light'}>
+      <AntApp>
+        <div style={{ minHeight: '100vh', fontSize: 15 }} data-theme={dark ? 'dark' : 'light'}>
         <style>{`
           [data-theme] {
             --bg-card: #32353d;
@@ -125,7 +132,7 @@ const App = () => {
             border-color: transparent !important;
           }
           [data-theme] * {
-            transition: background 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out !important;
+            transition: background 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out;
           }
           body[data-panel-open] .ant-modal-wrap {
             padding-right: var(--panel-width, 660px);
@@ -179,7 +186,6 @@ const App = () => {
         <div style={{
           maxWidth: 1400, margin: '0 auto', padding: '16px 32px',
           opacity: isIdle ? 0.7 : 1,
-          transition: 'opacity 0.3s',
         }}>
           <div style={{
             background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)',
@@ -191,7 +197,7 @@ const App = () => {
                 overflow: 'hidden', display: 'flex',
               }}>
                 {pendingFrac > 0 && <div style={{ width: `${pendingFrac * 100}%`, background: '#9ca0a8', transition: 'width 0.3s' }} />}
-                {runningFrac > 0 && <div style={{ width: `${runningFrac * 100}%`, background: '#4a9eff', transition: 'width 0.3s' }} />}
+                {runningFrac > 0 && <div style={{ width: `${runningFrac * 100}%`, background: '#7a818a', transition: 'width 0.3s' }} />}
                 {doneFrac > 0 && <div style={{ width: `${doneFrac * 100}%`, background: '#2ea86b', transition: 'width 0.3s' }} />}
                 {reviewFrac > 0 && <div style={{ width: `${reviewFrac * 100}%`, background: '#d4943a', transition: 'width 0.3s' }} />}
                 {failedFrac > 0 && <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />}
@@ -206,7 +212,7 @@ const App = () => {
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>-</span>
                   <span style={{ color: '#9ca0a8' }}>{p.pending}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: '#4a9eff' }}>{p.running}</span>
+                  <span style={{ color: '#7a818a' }}>{p.running}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: '#2ea86b' }}>{p.done}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
@@ -238,6 +244,8 @@ const App = () => {
       </div>
 
       <PdfViewerPanel />
+      <DevConsole />
+      </AntApp>
     </ConfigProvider>
   );
 };

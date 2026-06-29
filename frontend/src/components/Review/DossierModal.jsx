@@ -1,33 +1,45 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Modal, Button, Space, Select, Tooltip, Divider } from 'antd';
+import { Modal, Button, Space, Select, Tooltip, Divider, App } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined,
-  EyeOutlined, LeftOutlined, RightOutlined,
+  EyeOutlined, LeftOutlined, RightOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
+import client from '../../api/client';
 import PageTile from './PageTile';
 
 const getJobColor = (job) => {
   if (!job) return { header: '#2ea86b', label: 'Корректно' };
   if (job.status === 'failed') return { header: '#d13a3a', label: 'Ошибка' };
+  if (job.status === 'running') return { header: '#7a818a', label: 'Обрабатывается' };
+  if (job.status === 'pending') return { header: '#9ca0a8', label: 'Ожидает' };
+  const allPages = job.total_pages || 0;
+  if (allPages > 0 && job.error_pages === allPages) return { header: '#d13a3a', label: 'Не распознано' };
   if (job.error_pages > 0) return { header: '#d4943a', label: 'Частичные ошибки' };
   return { header: '#2ea86b', label: 'Корректно' };
 };
 
 const groupPagesByType = (pages) => {
-  const groups = {};
+  const groups = [];
+  let current = null;
   for (const p of pages) {
-    const key = p.document_type_id || '__undetected__';
-    if (!groups[key]) groups[key] = { typeId: p.document_type_id, typeName: p.document_type_name || 'Не распознан', pages: [] };
-    groups[key].pages.push(p);
+    if (current && current.typeId === p.document_type_id) {
+      current.pages.push(p);
+    } else {
+      if (current) groups.push(current);
+      current = { typeId: p.document_type_id, typeName: p.document_type_name || 'Не распознан', pages: [p] };
+    }
   }
-  return Object.values(groups);
+  if (current) groups.push(current);
+  return groups;
 };
 
 const DossierModal = ({ open, job, onClose }) => {
   const { selectedPages, togglePageSelection, patchPages, confirmJob, clearSelection, openPdfViewer } = useJobStore();
+  const [apiModal, apiModalCtx] = Modal.useModal();
   const [documentTypes, setDocumentTypes] = useState([]);
   const [pages, setPages] = useState([]);
+  const [outputDocs, setOutputDocs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [batchType, setBatchType] = useState(null);
 
@@ -48,6 +60,9 @@ const DossierModal = ({ open, job, onClose }) => {
   useEffect(() => {
     if (open && job) {
       loadPages();
+      import('../../api/jobsApi').then(({ getJobDetail }) =>
+        getJobDetail(job.job_id).then(res => setOutputDocs(res.data?.output_documents || []))
+      );
       import('../../api/configApi').then(({ getDocumentTypes }) =>
         getDocumentTypes(job.project_id || undefined).then(res => setDocumentTypes(res.data))
       );
@@ -123,10 +138,16 @@ const DossierModal = ({ open, job, onClose }) => {
   };
 
   const handleConfirm = () => {
-    Modal.confirm({
+    apiModal.confirm({
       title: 'Подтвердить и склеить?', icon: null,
       content: <span style={{ color: 'var(--text-secondary)' }}>Создать итоговые PDF-файлы на основе текущего распределения страниц?</span>,
-      okText: 'Подтвердить', onOk: () => confirmJob(jid),
+      okText: 'Подтвердить',
+      onOk: async () => {
+        await confirmJob(jid);
+        import('../../api/jobsApi').then(({ getJobDetail }) =>
+          getJobDetail(jid).then(res => setOutputDocs(res.data?.output_documents || []))
+        );
+      },
     });
   };
 
@@ -134,8 +155,14 @@ const DossierModal = ({ open, job, onClose }) => {
     <>
       <Modal
         title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: 32 }}>
             <Space size={12}>
+              {job?.status !== 'done' && (
+                <Button size="small" type="primary" onClick={handleConfirm}
+                  style={{ borderRadius: 6, fontSize: 13 }}>
+                  Подтвердить
+                </Button>
+              )}
               <span style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600 }}>
                 {job?.source_filename || ''}
               </span>
@@ -152,14 +179,6 @@ const DossierModal = ({ open, job, onClose }) => {
                   Открыть исходный PDF
                 </Button>
               </Tooltip>
-            </Space>
-            <Space>
-              {job?.status !== 'done' && (
-                <Button size="small" type="primary" onClick={handleConfirm}
-                  style={{ borderRadius: 6, fontSize: 13 }}>
-                  Подтвердить и склеить
-                </Button>
-              )}
             </Space>
           </div>
         }
@@ -238,8 +257,43 @@ const DossierModal = ({ open, job, onClose }) => {
               )}
             </div>
           )}
+          {outputDocs.length > 0 && (
+            <div style={{ marginTop: pages.length > 0 ? 20 : 0, padding: '0 24px 20px' }}>
+              <Divider style={{ borderColor: 'var(--border)', marginBottom: 16 }} />
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>
+                <DownloadOutlined /> Итоговые документы ({outputDocs.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {outputDocs.map((doc) => (
+                  <div key={doc.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '10px 16px', borderRadius: 8,
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                        {doc.document_type_name || doc.document_type_id}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        Стр. {doc.start_page + 1}–{doc.end_page + 1} · {doc.page_count} стр.
+                        {doc.occurrence_index > 1 ? ` · №${doc.occurrence_index}` : ''}
+                      </div>
+                    </div>
+                    <Tooltip title="Скачать PDF">
+                      <Button size="small" icon={<DownloadOutlined />}
+                        href={`${client.defaults.baseURL}/jobs/${jid}/output/${doc.id}`}
+                        target="_blank"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--accent-border)', borderRadius: 6 }}
+                      />
+                    </Tooltip>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
+      {apiModalCtx}
 
       <style>{`
         .batch-select .ant-select-selection-placeholder { color: var(--text-tertiary) !important; opacity: 1 !important; }
@@ -317,7 +371,7 @@ const DossierModal = ({ open, job, onClose }) => {
       >
         {jid && previewModal.pageNum != null && (
           <div onWheel={handleWheel}>
-            <img src={`/api/jobs/${jid}/page/${previewModal.pageNum}/preview`}
+            <img src={`${client.defaults.baseURL}/jobs/${jid}/page/${previewModal.pageNum}/preview`}
               alt={`Page ${previewModal.pageNum}`}
               style={{ width: '100%', display: 'block', maxHeight: '80vh', objectFit: 'contain' }} />
             <div style={{

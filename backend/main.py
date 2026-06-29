@@ -25,15 +25,23 @@ async def lifespan(app: FastAPI):
         format="[%(asctime)s] %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    from backend.api.log_routes import setup_log_handler
+    setup_log_handler()
 
     for dir_path in [_settings.INPUT_DIR, _settings.OUTPUT_DIR, _settings.TEMP_DIR]:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
     engine = get_engine(_settings)
     try:
+        alembic_ini = Path(__file__).resolve().parent / "alembic.ini"
+        if not alembic_ini.exists():
+            raise FileNotFoundError(f"alembic.ini not found at {alembic_ini}")
         from alembic.config import Config as AlembicConfig
         from alembic import command as alembic_command
-        alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent / "alembic.ini"))
+        alembic_cfg = AlembicConfig(str(alembic_ini))
+        # Use the runtime DATABASE_URL (may differ from alembic.ini default)
+        db_url = _settings.DATABASE_URL.replace("+aiosqlite", "")
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
         alembic_command.upgrade(alembic_cfg, "head")
         logger.info("DB migrations applied")
     except Exception as e:
