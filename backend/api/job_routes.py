@@ -19,7 +19,7 @@ from backend.api.utils import parse_job_id
 from backend.config import Settings
 
 
-async def _run_orchestrator(job_id: uuid.UUID, request: Request):
+async def _run_orchestrator(job_id: uuid.UUID, request: Request, next_job_ids: list[uuid.UUID] | None = None):
     from backend.core.orchestrator import DocumentOrchestrator
     async with request.app.state.sessionmaker() as db:
         orch = DocumentOrchestrator(
@@ -29,7 +29,7 @@ async def _run_orchestrator(job_id: uuid.UUID, request: Request):
             cv_module=request.app.state.cv_module,
             vlm_module=request.app.state.vlm_module,
         )
-        await orch.process_job(job_id)
+        await orch.process_job(job_id, next_job_ids=next_job_ids)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -91,16 +91,18 @@ async def start_batch(background_tasks: BackgroundTasks, request: Request, proje
     pending_query = select(ProcessingJob).where(ProcessingJob.status == JobStatus.pending)
     if project_id:
         pending_query = pending_query.where(ProcessingJob.project_id == project_id)
+    pending_query = pending_query.order_by(ProcessingJob.created_at.asc())
     result = await db.execute(pending_query)
     jobs = result.scalars().all()
     if not jobs:
         raise HTTPException(status_code=400, detail="No pending jobs found")
-    for job in jobs:
-        job.status = JobStatus.running
+
+    first = jobs[0]
+    first.status = JobStatus.running
     await db.commit()
 
-    for job in jobs:
-        background_tasks.add_task(_run_orchestrator, job.id, request)
+    next_ids = [j.id for j in jobs[1:]]
+    background_tasks.add_task(_run_orchestrator, first.id, request, next_ids)
 
     return {"started": len(jobs)}
 
@@ -113,7 +115,7 @@ async def list_jobs(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results))
+    query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results), selectinload(ProcessingJob.output_documents))
     count_query = select(func.count(ProcessingJob.id))
     if project_id:
         query = query.where(ProcessingJob.project_id == project_id)
@@ -130,15 +132,20 @@ async def list_jobs(
     for job in jobs:
         pages = job.page_results or []
         total_pages = len(pages)
-        error_pages = sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length')
+        error_pages = sum(1 for p in pages if p.error_code is not None)
+        output_docs = job.output_documents or []
+        ok_documents = sum(1 for d in output_docs if d.status == "ok")
         items.append(JobSummary(
             job_id=str(job.id),
             project_id=job.project_id,
             batch_id=job.batch_id,
             source_filename=job.source_filename,
             status=job.status,
+            processing_stage=job.processing_stage,
             total_pages=total_pages,
             error_pages=error_pages,
+            ok_documents=ok_documents,
+            total_documents=len(output_docs),
             created_at=job.created_at,
             finished_at=job.finished_at,
         ))
@@ -250,6 +257,30 @@ async def stream_output_pdf(job_id: str, doc_id: int, db: AsyncSession = Depends
         raise HTTPException(status_code=404, detail="Output file not yet generated")
     from fastapi.responses import FileResponse
     return FileResponse(doc.output_path, media_type="application/pdf")
+
+
+@router.delete("/batch/{batch_id}", status_code=204)
+async def delete_batch(batch_id: str, db: AsyncSession = Depends(get_db)):
+    import shutil, os
+    from uuid import UUID
+    try:
+        bid = UUID(batch_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid batch_id")
+    result = await db.execute(
+        select(ProcessingJob).where(ProcessingJob.batch_id == bid)
+    )
+    jobs = result.scalars().all()
+    if not jobs:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    for job in jobs:
+        if job.source_path and os.path.exists(job.source_path):
+            shutil.rmtree(os.path.dirname(job.source_path), ignore_errors=True)
+        output_base = os.path.join(Settings().OUTPUT_DIR, str(job.id))
+        if os.path.exists(output_base):
+            shutil.rmtree(output_base, ignore_errors=True)
+        await db.delete(job)
+    await db.commit()
 
 
 @router.delete("/{job_id}", status_code=204)

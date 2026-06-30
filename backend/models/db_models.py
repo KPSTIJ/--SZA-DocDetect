@@ -39,6 +39,7 @@ class ProcessingJob(Base):
     source_filename = Column(String(255), nullable=False)
     source_path = Column(String(500), nullable=False)
     status = Column(Enum("pending", "running", "done", "failed", "needs_review", name="job_status"), nullable=False, default="pending")
+    processing_stage = Column(String(50), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)

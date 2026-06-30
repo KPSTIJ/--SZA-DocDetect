@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 
 
@@ -19,16 +20,26 @@ class PageAssignment:
     confidence: float = 1.0
 
 
+_QUOTE_RE = re.compile(r'[\u00ab\u00bb\u201c\u201d\u201e\u201f]')
+
+
+def _normalize_quotes(text: str) -> str:
+    return _QUOTE_RE.sub('"', text)
+
+
 def find_title_pages_by_text(
     pages_text: list[dict],
     document_types: list,
 ) -> list[TitlePageMatch]:
     matches = []
     for page in pages_text:
-        text_lower = page["text"].lower()
+        text_normalized = _normalize_quotes(" ".join(page["text"].split()).lower())
         for dt in document_types:
             for pattern in dt.text_patterns:
-                if isinstance(pattern, str) and pattern.lower() in text_lower:
+                if not isinstance(pattern, str):
+                    continue
+                pattern_normalized = _normalize_quotes(" ".join(pattern.split()).lower())
+                if pattern_normalized in text_normalized:
                     matches.append(TitlePageMatch(
                         page_num=page["page"],
                         doc_type_id=dt.id,

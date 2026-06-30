@@ -1948,3 +1948,11 @@ VITE_API_BASE_URL=/api
 | 31 | **Загрузка без автостарта** | `job_routes.py` | Обработка только по «Запустить» |
 | 32 | **Независимый фильтр проекта** | `jobStore.js`, `ReviewPage.jsx` | Фильтр в Разборе не зависит от ProjectBar |
 | 33 | **Вкладка «В обработке»** | `ReviewPage.jsx` | running/pending фильтр |
+| 34 | **DELETE /api/jobs/batch/{batch_id}** | `job_routes.py` | Удаление всей загрузки по batch_id |
+| 35 | **Один job в обработке** | `job_routes.py`, `orchestrator.py` | `start-batch` запускает только первый, чейнинг последовательный |
+| 36 | **Единый источник статусов** | `orchestrator.py`, фронтенд | `job.status` выставляется по выходным документам, фронтенд только читает |
+| 37 | **Auto-split одинаковых типов** | `_assign_document_boundaries` | Сегменты > max_pages разбиваются на несколько документов |
+| 38 | **`invalid_length` → needs_review** | `orchestrator.py` | `invalid_length` включён в `error_pages` и проверяется ДО сплита |
+| 39 | **DevConsole** | `DevConsole.jsx`, `log_routes.py` | Правая панель 500px, чтение логов из файла |
+| 40 | **Чейнинг с проверкой `pending`** | `orchestrator.py` | Следующий job запускается только если `status == 'pending'` |
+| 41 | **Нормализация кавычек** | `text_layer.py` | `_normalize_quotes()` — приведение всех видов кавычек к стандарту |

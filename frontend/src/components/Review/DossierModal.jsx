@@ -1,37 +1,47 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Modal, Button, Space, Select, Tooltip, Divider, App } from 'antd';
+import { Modal, Button, Space, Select, Tooltip, Divider, App, Collapse } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined,
-  EyeOutlined, LeftOutlined, RightOutlined, DownloadOutlined,
+  EyeOutlined, LeftOutlined, RightOutlined, DownloadOutlined, DownOutlined,
 } from '@ant-design/icons';
 import useJobStore from '../../store/jobStore';
 import client from '../../api/client';
 import PageTile from './PageTile';
 
+const getStageLabel = (stage) => {
+  const map = { text_layer: 'Анализ текста', ocr_cv: 'OCR+CV', vlm: 'Визуальная модель', assembling: 'Склейка PDF' };
+  return map[stage] || stage;
+};
+
 const getJobColor = (job) => {
   if (!job) return { header: '#2ea86b', label: 'Корректно' };
-  if (job.status === 'failed') return { header: '#d13a3a', label: 'Ошибка' };
-  if (job.status === 'running') return { header: '#7a818a', label: 'Обрабатывается' };
-  if (job.status === 'pending') return { header: '#9ca0a8', label: 'Ожидает' };
-  const allPages = job.total_pages || 0;
-  if (allPages > 0 && job.error_pages === allPages) return { header: '#d13a3a', label: 'Не распознано' };
-  if (job.error_pages > 0) return { header: '#d4943a', label: 'Частичные ошибки' };
-  return { header: '#2ea86b', label: 'Корректно' };
+  if (job.status === 'running') return { header: '#4a9eff', label: job.processing_stage ? `${getStageLabel(job.processing_stage)}…` : 'Обрабатывается' };
+  if (job.status === 'pending') return { header: '#9ca0a8', label: 'В ожидании' };
+  if (job.status === 'done') return { header: '#2ea86b', label: 'Корректно' };
+  if (job.status === 'needs_review') return { header: '#d4943a', label: 'На проверке' };
+  return { header: '#d13a3a', label: 'Не распознано' };
 };
 
 const groupPagesByType = (pages) => {
-  const groups = [];
+  const segments = [];
   let current = null;
   for (const p of pages) {
     if (current && current.typeId === p.document_type_id) {
       current.pages.push(p);
     } else {
-      if (current) groups.push(current);
+      if (current) segments.push(current);
       current = { typeId: p.document_type_id, typeName: p.document_type_name || 'Не распознан', pages: [p] };
     }
   }
-  if (current) groups.push(current);
-  return groups;
+  if (current) segments.push(current);
+  const counts = {};
+  segments.forEach(g => {
+    if (g.typeId != null) {
+      counts[g.typeId] = (counts[g.typeId] || 0) + 1;
+      g.occurrence = counts[g.typeId];
+    }
+  });
+  return segments;
 };
 
 const DossierModal = ({ open, job, onClose }) => {
@@ -154,33 +164,26 @@ const DossierModal = ({ open, job, onClose }) => {
   return (
     <>
       <Modal
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: 32 }}>
-            <Space size={12}>
-              {job?.status !== 'done' && (
-                <Button size="small" type="primary" onClick={handleConfirm}
-                  style={{ borderRadius: 6, fontSize: 13 }}>
-                  Подтвердить
-                </Button>
-              )}
-              <span style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600 }}>
-                {job?.source_filename || ''}
-              </span>
-              <span style={{
-                display: 'inline-block', padding: '2px 10px', borderRadius: 6,
-                fontSize: 12, fontWeight: 600, color: '#fff', background: color.header,
-              }}>
-                {pages.length} стр · {color.label}
-              </span>
-              <Tooltip title="Открыть исходный PDF">
-                <Button size="small" icon={<EyeOutlined />}
-                  onClick={() => { if (jid) openPdfViewer(jid, job?.source_filename); }}
-                  style={{ color: 'var(--accent)', fontSize: 13, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '2px 12px', background: 'var(--accent-bg)' }}>
-                  Открыть исходный PDF
-                </Button>
-              </Tooltip>
-            </Space>
-          </div>
+        title={<div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+          <span style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600 }}>{job?.source_filename || ''}</span>
+          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#fff', background: color.header, whiteSpace: 'nowrap' }}>
+            {pages.length} стр · {color.label}
+          </span>
+          <Tooltip title="Открыть исходный PDF">
+            <Button size="small" icon={<EyeOutlined />}
+              onClick={() => { if (jid) openPdfViewer(jid, job?.source_filename); }}
+              style={{ color: 'var(--accent)', fontSize: 13, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '2px 12px', background: 'var(--accent-bg)' }}>
+              Открыть исходный PDF
+            </Button>
+          </Tooltip>
+        </div>}
+        extra={
+          job?.status !== 'done' && (
+            <Button size="small" type="primary" onClick={handleConfirm}
+              style={{ borderRadius: 6, fontSize: 13 }}>
+              Подтвердить
+            </Button>
+          )
         }
         open={open}
         onCancel={onClose}
@@ -199,11 +202,13 @@ const DossierModal = ({ open, job, onClose }) => {
                     <ExclamationCircleOutlined /> Страницы с ошибками ({errorPages.length})
                   </div>
                   {errorGroups.map((group, gi) => (
-                    <React.Fragment key={group.typeId}>
+                    <React.Fragment key={group.typeId != null ? `${group.typeId}-${group.occurrence}` : `undetected-${gi}`}>
                       {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
                       <div style={{ marginBottom: gi === errorGroups.length - 1 ? 0 : 20 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#d13a3a', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                          {group.typeName} · {group.pages.length} стр.
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#d13a3a', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {group.typeId != null && <span style={{ fontSize: 13, fontWeight: 700, color: '#d13a3a' }}>№{group.occurrence}</span>}
+                          <span>{group.typeName}</span>
+                          <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
                         </div>
                         <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
                           {group.pages.map((page) => (
@@ -230,11 +235,13 @@ const DossierModal = ({ open, job, onClose }) => {
                     <CheckCircleOutlined /> Корректные страницы ({okPages.length})
                   </div>
                   {okGroups.map((group, gi) => (
-                    <React.Fragment key={group.typeId}>
+                    <React.Fragment key={group.typeId != null ? `${group.typeId}-${group.occurrence}` : `ok-${gi}`}>
                       {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
                       <div style={{ marginBottom: gi === okGroups.length - 1 ? 0 : 20 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                          {group.typeName} · {group.pages.length} стр.
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>№{group.occurrence}</span>
+                          <span>{group.typeName}</span>
+                          <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
                         </div>
                         <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
                           {group.pages.map((page) => (
@@ -260,35 +267,44 @@ const DossierModal = ({ open, job, onClose }) => {
           {outputDocs.length > 0 && (
             <div style={{ marginTop: pages.length > 0 ? 20 : 0, padding: '0 24px 20px' }}>
               <Divider style={{ borderColor: 'var(--border)', marginBottom: 16 }} />
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>
-                <DownloadOutlined /> Итоговые документы ({outputDocs.length})
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {outputDocs.map((doc) => (
-                  <div key={doc.id} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '10px 16px', borderRadius: 8,
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                  }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
-                        {doc.document_type_name || doc.document_type_id}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                        Стр. {doc.start_page + 1}–{doc.end_page + 1} · {doc.page_count} стр.
-                        {doc.occurrence_index > 1 ? ` · №${doc.occurrence_index}` : ''}
-                      </div>
+              <Collapse
+                ghost
+                defaultActiveKey={[]}
+                expandIcon={({ isActive }) => <DownOutlined rotate={isActive ? 180 : 0} style={{ fontSize: 12 }} />}
+                style={{ background: 'transparent' }}
+                items={[{
+                  key: 'output',
+                  label: (
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <DownloadOutlined /> Итоговые документы ({outputDocs.length})
+                    </span>
+                  ),
+                  children: (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      {outputDocs.map((doc) => (
+                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                              {doc.document_type_name || doc.document_type_id}
+                              {doc.occurrence_index > 1 ? ` №${doc.occurrence_index}` : ''}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                              Стр. {doc.start_page + 1}–{doc.end_page + 1} · {doc.page_count} стр.
+                            </div>
+                          </div>
+                          <Tooltip title="Скачать PDF">
+                            <Button size="small" icon={<DownloadOutlined />}
+                              href={`${client.defaults.baseURL}/jobs/${jid}/output/${doc.id}`}
+                              target="_blank"
+                              style={{ color: 'var(--accent)', border: '1px solid var(--accent-border)', borderRadius: 6 }}
+                            />
+                          </Tooltip>
+                        </div>
+                      ))}
                     </div>
-                    <Tooltip title="Скачать PDF">
-                      <Button size="small" icon={<DownloadOutlined />}
-                        href={`${client.defaults.baseURL}/jobs/${jid}/output/${doc.id}`}
-                        target="_blank"
-                        style={{ color: 'var(--accent)', border: '1px solid var(--accent-border)', borderRadius: 6 }}
-                      />
-                    </Tooltip>
-                  </div>
-                ))}
-              </div>
+                  ),
+                }]}
+              />
             </div>
           )}
         </div>

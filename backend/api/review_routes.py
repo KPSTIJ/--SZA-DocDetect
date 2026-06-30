@@ -23,7 +23,7 @@ async def list_review_jobs(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results))
+    query = select(ProcessingJob).options(selectinload(ProcessingJob.page_results), selectinload(ProcessingJob.output_documents))
     if project_id:
         query = query.where(ProcessingJob.project_id == project_id)
     query = query.order_by(ProcessingJob.created_at.desc()).offset(offset).limit(limit)
@@ -38,15 +38,20 @@ async def list_review_jobs(
     for job in all_jobs:
         pages = job.page_results or []
         total_pages += len(pages)
-        total_error += sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length')
+        total_error += sum(1 for p in pages if p.error_code is not None)
+        output_docs = job.output_documents or []
+        ok_documents = sum(1 for d in output_docs if d.status == "ok")
         js = JobSummary(
             job_id=str(job.id),
             project_id=job.project_id,
             batch_id=job.batch_id,
             source_filename=job.source_filename,
             status=job.status,
+            processing_stage=job.processing_stage,
             total_pages=len(pages),
-            error_pages=sum(1 for p in pages if p.error_code is not None and p.error_code != 'invalid_length'),
+            error_pages=sum(1 for p in pages if p.error_code is not None),
+            ok_documents=ok_documents,
+            total_documents=len(output_docs),
             created_at=job.created_at,
             finished_at=job.finished_at,
         )

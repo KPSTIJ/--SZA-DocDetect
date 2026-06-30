@@ -38,3 +38,5 @@ export const patchReviewPages = (jobId, assignments) =>
   client.patch(`/review/jobs/${jobId}/pages`, { assignments });
 
 export const confirmReview = (jobId) => client.post(`/review/jobs/${jobId}/confirm`);
+
+export const deleteBatch = (batchId) => client.delete(`/jobs/batch/${batchId}`);

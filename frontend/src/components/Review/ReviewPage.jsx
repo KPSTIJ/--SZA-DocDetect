@@ -8,15 +8,23 @@ import useJobStore from '../../store/jobStore';
 import useProjectStore from '../../store/projectStore';
 import DossierModal from './DossierModal';
 
-  const getJobColor = (job) => {
-  if (job.status === 'failed') return { strip: '#d13a3a', label: 'Ошибка' };
-  if (job.status === 'running') return { strip: '#7a818a', label: 'Обрабатывается' };
-  if (job.status === 'pending') return { strip: '#9ca0a8', label: 'Ожидает' };
-  const allPages = job.total_pages || 0;
-  if (allPages > 0 && job.error_pages === allPages) return { strip: '#d13a3a', label: 'Не распознано' };
-  if (job.error_pages > 0) return { strip: '#d4943a', label: 'Частичные ошибки' };
-  return { strip: '#2ea86b', label: 'Корректно' };
+const getStageLabel = (stage) => {
+  const map = {
+    text_layer: 'Анализ текста',
+    ocr_cv: 'OCR + CV',
+    vlm: 'Визуальная модель',
+    assembling: 'Склейка PDF',
   };
+  return map[stage] || stage;
+};
+
+const getJobColor = (job) => {
+  if (job.status === 'running') return { strip: '#4a9eff', label: job.processing_stage ? `${getStageLabel(job.processing_stage)}…` : 'Обрабатывается' };
+  if (job.status === 'pending') return { strip: '#9ca0a8', label: 'В ожидании' };
+  if (job.status === 'done') return { strip: '#2ea86b', label: 'Корректно' };
+  if (job.status === 'needs_review') return { strip: '#d4943a', label: 'На проверке' };
+  return { strip: '#d13a3a', label: 'Не распознано' };
+};
 
 const FILTERS = [
   { key: 'all', label: 'Все', color: 'var(--text-secondary)' },
@@ -27,7 +35,7 @@ const FILTERS = [
 ];
 
 const ReviewPage = () => {
-  const { reviewJobs, fetchReviewJobs, deleteJob, openPdfViewer } = useJobStore();
+  const { reviewJobs, fetchReviewJobs, deleteJob, deleteBatch, openPdfViewer } = useJobStore();
   const projects = useProjectStore((s) => s.projects);
   const [apiModal, apiModalCtx] = Modal.useModal();
   const [filterTab, setFilterTab] = useState('all');
@@ -83,19 +91,23 @@ const ReviewPage = () => {
 
   const countByFilter = useMemo(() => {
     const all = filteredBySearch.length;
-    const errors = filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed' && j.status !== 'running' && j.status !== 'pending').length;
+    const errors = filteredBySearch.filter(j => j.status === 'needs_review').length;
     const failed = filteredBySearch.filter(j => j.status === 'failed').length;
-    const ok = filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0).length;
+    const ok = filteredBySearch.filter(j => j.status === 'done').length;
     const processing = filteredBySearch.filter(j => j.status === 'running' || j.status === 'pending').length;
     return { all, errors, failed, ok, processing };
   }, [filteredBySearch]);
 
   const filteredJobs = (() => {
-    if (filterTab === 'errors') return filteredBySearch.filter(j => j.error_pages > 0 && j.status !== 'failed' && j.status !== 'running' && j.status !== 'pending');
-    if (filterTab === 'failed') return filteredBySearch.filter(j => j.status === 'failed');
-    if (filterTab === 'ok') return filteredBySearch.filter(j => j.status === 'done' && (j.error_pages || 0) === 0);
-    if (filterTab === 'processing') return filteredBySearch.filter(j => j.status === 'running' || j.status === 'pending');
-    return filteredBySearch;
+    let jobs = filteredBySearch;
+    if (filterTab === 'errors') jobs = jobs.filter(j => j.status === 'needs_review');
+    if (filterTab === 'failed') jobs = jobs.filter(j => j.status === 'failed');
+    if (filterTab === 'ok') jobs = jobs.filter(j => j.status === 'done');
+    if (filterTab === 'processing') jobs = jobs.filter(j => j.status === 'running' || j.status === 'pending');
+    return [...jobs].sort((a, b) => {
+      const order = { running: 0, pending: 1, needs_review: 2, failed: 3, done: 4 };
+      return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+    });
   })();
 
   const handleDelete = (job) => {
@@ -106,6 +118,25 @@ const ReviewPage = () => {
       cancelText: 'Отмена',
       okButtonProps: { danger: true },
       onOk: () => deleteJob(job.job_id),
+    });
+  };
+
+  const handleDeleteBatch = () => {
+    const batchInfo = batchOptions.find(b => b.value === filterBatchId);
+    const label = batchInfo?.label || 'выбранную загрузку';
+    const batchJobs = allJobs.filter(j => (j.batch_id ? String(j.batch_id) : j.job_id) === filterBatchId);
+    apiModal.confirm({
+      title: 'Удалить всю загрузку?',
+      content: (
+        <div>
+          <div style={{ marginBottom: 8 }}>Вы уверены, что хотите удалить <b>{label}</b>?</div>
+          <div style={{ color: '#d13a3a', fontWeight: 600 }}>{batchJobs.length} досье будет удалено безвозвратно.</div>
+        </div>
+      ),
+      okText: 'Удалить всё',
+      cancelText: 'Отмена',
+      okButtonProps: { danger: true },
+      onOk: () => deleteBatch(filterBatchId),
     });
   };
 
@@ -137,7 +168,7 @@ const ReviewPage = () => {
       }}>
         <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap' }}>Фильтры</span>
         <Select
-          style={{ minWidth: 160, flex: 1 }}
+          style={{ width: 280, flexShrink: 0 }}
           placeholder="Все проекты"
           value={filterProjectId}
           onChange={(v) => { setFilterProjectId(v); setFilterBatchId(null); }}
@@ -145,7 +176,7 @@ const ReviewPage = () => {
           options={projects.map((p) => ({ value: p.id, label: p.name }))}
         />
         <Select
-          style={{ minWidth: 160, flex: 1 }}
+          style={{ width: 280, flexShrink: 0 }}
           placeholder="Все загрузки"
           value={filterBatchId}
           onChange={(v) => setFilterBatchId(v)}
@@ -155,13 +186,20 @@ const ReviewPage = () => {
           optionFilterProp="label"
         />
         <Input
-          style={{ minWidth: 240, flex: 2 }}
+          style={{ minWidth: 100, flex: 1 }}
           placeholder="Поиск по названию..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           prefix={<SearchOutlined style={{ color: 'var(--text-tertiary)' }} />}
           allowClear
         />
+        {filterBatchId && (
+          <Tooltip title="Удалить все досье этой загрузки">
+            <Button danger icon={<DeleteOutlined />} onClick={handleDeleteBatch} style={{ borderRadius: 6, flexShrink: 0 }}>
+              Удалить загрузку
+            </Button>
+          </Tooltip>
+        )}
       </div>
 
       <div style={{ background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)' }}>

@@ -2,39 +2,35 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from 'antd';
 import { CloseOutlined, ReloadOutlined } from '@ant-design/icons';
 import client from '../api/client';
+import useJobStore from '../store/jobStore';
+
+const PANEL_WIDTH = 500;
 
 const DevConsole = () => {
-  const [open, setOpen] = useState(false);
+  const { logViewerOpen, closeLogViewer, pdfViewer } = useJobStore();
   const [logs, setLogs] = useState([]);
+  const [error, setError] = useState(null);
   const scrollRef = useRef(null);
+
+  const pdfPanelWidth = pdfViewer.open ? Math.round((window.innerHeight - 100) * 210 / 297 + 40) : 0;
 
   const fetchLogs = async () => {
     try {
       const res = await client.get('/logs', { params: { lines: 200 } });
       setLogs(res.data.lines);
+      setError(null);
     } catch {
-      // ignore
+      setError('Не удалось загрузить логи');
     }
   };
 
   useEffect(() => {
-    if (open) {
+    if (logViewerOpen) {
       fetchLogs();
       const interval = setInterval(fetchLogs, 2000);
       return () => clearInterval(interval);
     }
-  }, [open]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.shiftKey && e.altKey && e.key === 'm') {
-        e.preventDefault();
-        setOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [logViewerOpen]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -42,32 +38,55 @@ const DevConsole = () => {
     }
   }, [logs]);
 
-  if (!open) return null;
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.shiftKey && e.altKey && e.key === 'm') {
+        e.preventDefault();
+        useJobStore.getState().toggleLogViewer();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  if (!logViewerOpen) return null;
 
   return (
     <div style={{
-      position: 'fixed', bottom: 0, left: 0, right: 0, height: '35vh', zIndex: 5000,
-      background: '#1a1b1e', borderTop: '2px solid #3a3d46',
-      display: 'flex', flexDirection: 'column',
+      position: 'fixed', top: 0, right: pdfPanelWidth, bottom: 0, width: PANEL_WIDTH, zIndex: 1100,
+      background: '#1c1e24', borderLeft: '1px solid var(--border)',
+      display: 'flex', flexDirection: 'column', boxShadow: '-6px 0 32px rgba(0,0,0,0.5)',
     }}>
       <div style={{
-        padding: '6px 12px', background: '#24262c', borderBottom: '1px solid #3a3d46',
+        padding: '12px 20px', borderBottom: '1px solid var(--border)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
+        background: 'var(--bg-card)',
       }}>
-        <span style={{ color: '#9ea3ad', fontSize: 12, fontWeight: 600 }}>Dev Console · Shift+Alt+M</span>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+            Dev Console
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Shift+Alt+M · {logs.length} строк
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <Button size="small" icon={<ReloadOutlined />} onClick={fetchLogs}
-            style={{ background: 'transparent', border: '1px solid #484b54', color: '#9ea3ad', borderRadius: 4 }} />
-          <Button size="small" icon={<CloseOutlined />} onClick={() => setOpen(false)}
-            style={{ background: 'transparent', border: '1px solid #484b54', color: '#9ea3ad', borderRadius: 4 }} />
+            style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-elevated)' }} />
+          <Button size="small" icon={<CloseOutlined />} onClick={closeLogViewer}
+            style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-elevated)' }} />
         </div>
       </div>
+
       <div ref={scrollRef} style={{
-        flex: 1, overflow: 'auto', padding: '8px 12px',
+        flex: 1, overflow: 'auto', padding: '12px 16px',
         fontFamily: 'monospace', fontSize: 11, lineHeight: '16px', whiteSpace: 'pre-wrap',
         color: '#bfc3cc',
       }}>
-        {logs.length === 0 && (
+        {error && (
+          <div style={{ color: '#d13a3a', padding: 12 }}>{error}</div>
+        )}
+        {logs.length === 0 && !error && (
           <div style={{ color: '#6b7078', padding: 12 }}>Нет логов</div>
         )}
         {logs.map((line, i) => {
@@ -78,6 +97,16 @@ const DevConsole = () => {
           else if (line.includes('DEBUG')) color = '#6b7078';
           return <div key={i} style={{ color }}>{line.trimEnd()}</div>;
         })}
+      </div>
+
+      <div style={{
+        padding: '8px 20px', borderTop: '1px solid var(--border)',
+        display: 'flex', justifyContent: 'flex-end', flexShrink: 0,
+        background: 'var(--bg-card)',
+      }}>
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+          Буфер: последние 500 строк · автообновление 2с
+        </span>
       </div>
     </div>
   );

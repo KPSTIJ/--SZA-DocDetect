@@ -31,6 +31,8 @@ const App = () => {
   const startPolling = useJobStore((s) => s.startPolling);
   const stopPolling = useJobStore((s) => s.stopPolling);
   const pdfViewer = useJobStore((s) => s.pdfViewer);
+  const logViewerOpen = useJobStore((s) => s.logViewerOpen);
+  const toggleLogViewer = useJobStore((s) => s.toggleLogViewer);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
 
@@ -46,12 +48,15 @@ const App = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const calcWidth = () => Math.round((window.innerHeight - 100) * 210 / 297 + 40);
+    const calcPdfWidth = () => Math.round((window.innerHeight - 100) * 210 / 297 + 40);
     const applyWidth = () => {
-      const w = pdfViewer.open ? `${calcWidth()}px` : '';
+      const pdfW = pdfViewer.open ? calcPdfWidth() : 0;
+      const logW = logViewerOpen ? 500 : 0;
+      const totalW = Math.max(pdfW, logW);
+      const w = totalW > 0 ? `${totalW}px` : '';
       document.body.style.paddingRight = w;
       document.body.style.setProperty('--panel-width', w);
-      if (pdfViewer.open) {
+      if (totalW > 0) {
         document.body.setAttribute('data-panel-open', '');
       } else {
         document.body.removeAttribute('data-panel-open');
@@ -65,7 +70,7 @@ const App = () => {
       document.body.style.removeProperty('--panel-width');
       document.body.removeAttribute('data-panel-open');
     };
-  }, [pdfViewer.open]);
+  }, [pdfViewer.open, logViewerOpen]);
   const p = getProgress();
   const hasJobs = p.total > 0;
   const isIdle = !hasJobs;
@@ -182,6 +187,20 @@ const App = () => {
           [data-theme] .ant-btn { font-size: 14px; }
         `}</style>
         <AppHeader activeTab={activeTab} onTabChange={setActiveTab} dark={dark} onToggleTheme={() => setDark(!dark)} />
+        <div onClick={toggleLogViewer} style={{
+          position: 'fixed', top: 0, left: 0, zIndex: 2000,
+          width: 20, height: 20, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: logViewerOpen ? 0.6 : 0.15,
+          transition: 'opacity 0.2s',
+        }}
+          title="Dev Console (Shift+Alt+M)"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </div>
 
         <div style={{
           maxWidth: 1400, margin: '0 auto', padding: '16px 32px',
@@ -197,7 +216,7 @@ const App = () => {
                 overflow: 'hidden', display: 'flex',
               }}>
                 {pendingFrac > 0 && <div style={{ width: `${pendingFrac * 100}%`, background: '#9ca0a8', transition: 'width 0.3s' }} />}
-                {runningFrac > 0 && <div style={{ width: `${runningFrac * 100}%`, background: '#7a818a', transition: 'width 0.3s' }} />}
+                {runningFrac > 0 && <div style={{ width: `${runningFrac * 100}%`, background: '#4a9eff', transition: 'width 0.3s' }} />}
                 {doneFrac > 0 && <div style={{ width: `${doneFrac * 100}%`, background: '#2ea86b', transition: 'width 0.3s' }} />}
                 {reviewFrac > 0 && <div style={{ width: `${reviewFrac * 100}%`, background: '#d4943a', transition: 'width 0.3s' }} />}
                 {failedFrac > 0 && <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />}
@@ -210,9 +229,7 @@ const App = () => {
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: 'var(--text)' }}>{p.total}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>-</span>
-                  <span style={{ color: '#9ca0a8' }}>{p.pending}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: '#7a818a' }}>{p.running}</span>
+                  <span style={{ color: '#4a9eff' }}>{p.running}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
                   <span style={{ color: '#2ea86b' }}>{p.done}</span>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>

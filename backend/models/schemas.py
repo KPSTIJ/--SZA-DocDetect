@@ -100,8 +100,11 @@ class JobSummary(BaseModel):
     batch_id: UUID | None = None
     source_filename: str
     status: JobStatus
+    processing_stage: str | None = None
     total_pages: int | None = None
     error_pages: int | None = None
+    ok_documents: int | None = None
+    total_documents: int | None = None
     created_at: datetime
     finished_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)

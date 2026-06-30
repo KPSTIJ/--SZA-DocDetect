@@ -2,13 +2,14 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings
-from backend.models.db_models import ProcessingJob, PageResult, OutputDocument, DocumentType
+from backend.models.db_models import ProcessingJob, PageResult, OutputDocument, DocumentType, Project
 from backend.modules.text_layer import (
     PageAssignment, find_title_pages_by_text, assign_pages_from_title_pages,
 )
@@ -22,6 +23,7 @@ from backend.services.pdf_service import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class DocumentOrchestrator:
@@ -39,7 +41,7 @@ class DocumentOrchestrator:
         self.cv_module = cv_module
         self.vlm_module = vlm_module
 
-    async def process_job(self, job_id: uuid.UUID) -> None:
+    async def process_job(self, job_id: uuid.UUID, next_job_ids: list[uuid.UUID] | None = None) -> None:
         job = await self.db.get(ProcessingJob, job_id)
         if not job:
             logger.error("Job %s not found", job_id)
@@ -56,8 +58,19 @@ class DocumentOrchestrator:
             job.error = str(e)
             await self.db.commit()
 
+        if next_job_ids:
+            next_id = next_job_ids[0]
+            remaining = next_job_ids[1:]
+            next_job = await self.db.get(ProcessingJob, next_id)
+            if next_job and next_job.status == "pending":
+                next_job.status = "running"
+                await self.db.commit()
+                await self.process_job(next_id, next_job_ids=remaining)
+
     async def _process_pipeline(self, job: ProcessingJob) -> None:
         pdf_path = job.source_path
+        logging.getLogger().info("Job %s — pipeline started, pdf=%s via root", job.id, pdf_path)
+        print(f"[DIRECT] pipeline started for {job.id}", file=__import__('sys').stderr, flush=True)
         logger.info("Job %s — pipeline started, pdf=%s", job.id, pdf_path)
 
         result = await self.db.execute(select(DocumentType))
@@ -74,6 +87,9 @@ class DocumentOrchestrator:
         scan_pages = [p for p in pages_text if not p["has_text_layer"]]
         logger.info("Job %s — %d pages, %d with text layer, %d scanned",
                      job.id, total_pages, len(text_pages), len(scan_pages))
+
+        job.processing_stage = "text_layer"
+        await self.db.commit()
 
         tl_assignments: dict[int, PageAssignment] = {}
 
@@ -98,6 +114,8 @@ class DocumentOrchestrator:
 
         fusion_assignments: dict[int, PageAssignment] = {}
         if need_fusion and self.ocr_module and self.cv_module:
+            job.processing_stage = "ocr_cv"
+            await self.db.commit()
             logger.info("Job %s — fusion processing %d pages", job.id, len(need_fusion))
             for page_num in sorted(need_fusion):
                 raw_img = await asyncio.to_thread(
@@ -142,6 +160,8 @@ class DocumentOrchestrator:
 
         vlm_assignments: dict[int, PageAssignment] = {}
         if need_vlm and self.vlm_module:
+            job.processing_stage = "vlm"
+            await self.db.commit()
             logger.info("Job %s — vlm processing %d pages", job.id, len(need_vlm))
             rendered_cache: dict[int, np.ndarray | None] = {}
 
@@ -199,18 +219,38 @@ class DocumentOrchestrator:
         final_assignments = self._revalidate_lengths(final_assignments, doc_types_dict)
 
         await self._save_page_results(job.id, final_assignments)
-        output_docs = self._assign_document_boundaries(final_assignments)
+
+        has_page_errors = any(
+            a.error_code is not None
+            for a in final_assignments
+        )
+
+        output_docs = self._assign_document_boundaries(final_assignments, doc_types_dict)
         await self._save_output_documents(job.id, output_docs)
 
         ok_docs = [d for d in output_docs if d["status"] == "ok"]
+        if ok_docs:
+            job.processing_stage = "assembling"
+            await self.db.commit()
         await self._assemble_pdfs(job, ok_docs)
 
-        has_problems = any(d["status"] != "ok" for d in output_docs)
-        job.status = "needs_review" if has_problems else "done"
+        has_doc_problems = any(d["status"] != "ok" for d in output_docs)
+
+        if not output_docs:
+            job.status = "failed"
+            job.error = "no_documents_recognized"
+        elif has_page_errors or has_doc_problems:
+            job.status = "needs_review"
+        else:
+            job.status = "done"
+        job.processing_stage = None
         job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.db.commit()
 
-        await self._save_final_output(job, ok_docs)
+        try:
+            await self._save_final_output(job, ok_docs)
+        except Exception as e:
+            logger.error("Job %s — final output save failed: %s", job.id, str(e))
         logger.info("Job %s — finished, status=%s", job.id, job.status)
 
     async def _save_final_output(self, job: ProcessingJob, ok_docs: list[dict]) -> None:
@@ -345,7 +385,7 @@ class DocumentOrchestrator:
         await self.db.commit()
 
     def _assign_document_boundaries(
-        self, page_assignments: list[PageAssignment]
+        self, page_assignments: list[PageAssignment], doc_types_dict: dict[str, any] | None = None
     ) -> list[dict]:
         if not page_assignments:
             return []
@@ -355,37 +395,54 @@ class DocumentOrchestrator:
         occurrence: dict[str, int] = {}
         has_error = False
 
-        for i, a in enumerate(page_assignments):
-            if a.doc_type_id != current_type:
-                if current_type is not None:
+        def add_doc(start, end):
+            nonlocal current_type, occurrence
+            length = end - start + 1
+            dt = doc_types_dict.get(current_type) if doc_types_dict else None
+            if dt and hasattr(dt, 'min_pages') and hasattr(dt, 'max_pages') and length > dt.max_pages:
+                for cs in range(start, end + 1, dt.max_pages):
+                    ce = min(cs + dt.max_pages - 1, end)
+                    cl = ce - cs + 1
+                    chunk_ok = dt.min_pages <= cl <= dt.max_pages
+                    if chunk_ok:
+                        for p in page_assignments:
+                            if cs <= p.page_number <= ce:
+                                p.error_code = None
                     if current_type not in occurrence:
                         occurrence[current_type] = 0
                     occurrence[current_type] += 1
                     docs.append({
                         "doc_type_id": current_type,
                         "occurrence_index": occurrence[current_type],
-                        "start_page": current_start,
-                        "end_page": i - 1,
-                        "status": "needs_review" if has_error else "ok",
+                        "start_page": cs,
+                        "end_page": ce,
+                        "status": "ok" if chunk_ok else "needs_review",
                     })
+            else:
+                if current_type not in occurrence:
+                    occurrence[current_type] = 0
+                occurrence[current_type] += 1
+                docs.append({
+                    "doc_type_id": current_type,
+                    "occurrence_index": occurrence[current_type],
+                    "start_page": start,
+                    "end_page": end,
+                    "status": "needs_review" if has_error else "ok",
+                })
+
+        for i, a in enumerate(page_assignments):
+            if a.doc_type_id != current_type:
+                if current_type is not None:
+                    add_doc(current_start, i - 1)
                 current_type = a.doc_type_id
                 current_start = i
                 has_error = False
 
-            if a.error_code and a.error_code != 'invalid_length':
+            if a.error_code:
                 has_error = True
 
         if current_type is not None:
-            if current_type not in occurrence:
-                occurrence[current_type] = 0
-            occurrence[current_type] += 1
-            docs.append({
-                "doc_type_id": current_type,
-                "occurrence_index": occurrence[current_type],
-                "start_page": current_start,
-                "end_page": len(page_assignments) - 1,
-                "status": "needs_review" if has_error else "ok",
-            })
+            add_doc(current_start, len(page_assignments) - 1)
 
         return docs
 
