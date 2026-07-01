@@ -210,7 +210,7 @@ const App = () => {
             background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border)',
             padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
           }}>
-            <div style={{ flex: '1 1 200px', minWidth: 140 }}>
+            <div style={{ flex: 1, minWidth: 100 }}>
               <div style={{
                 height: 10, borderRadius: 5, background: 'var(--border)',
                 overflow: 'hidden', display: 'flex',
@@ -222,27 +222,11 @@ const App = () => {
                 {failedFrac > 0 && <div style={{ width: `${failedFrac * 100}%`, background: '#d13a3a', transition: 'width 0.3s' }} />}
               </div>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-              {hasJobs ? (
-                <span>
-                  <span style={{ color: 'var(--text-secondary)' }}>{p.completed}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: 'var(--text)' }}>{p.total}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>-</span>
-                  <span style={{ color: '#4a9eff' }}>{p.running}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: '#2ea86b' }}>{p.done}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: '#d4943a' }}>{p.needs_review}</span>
-                  <span style={{ color: 'var(--text-tertiary)', margin: '0 3px' }}>/</span>
-                  <span style={{ color: '#d13a3a' }}>{p.failed}</span>
-                </span>
-              ) : selectedProjectId ? (
-                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 14 }}>Нет задач</span>
-              ) : (
-                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 14 }}>Выберите проект</span>
-              )}
-            </div>
+            {hasJobs && (
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {p.completed} / {p.total}
+              </span>
+            )}
             {isIdle && (
               <Tag icon={<InboxOutlined />} style={{
                 background: dark ? '#2f3137' : '#f0f0f0',

@@ -31,12 +31,18 @@ export const getSourcePdf = (jobId) =>
 export const getOutputPdf = (jobId, docId) =>
   client.get(`/jobs/${jobId}/output/${docId}`, { responseType: 'blob' });
 
-export const getReviewJobs = (projectId) =>
-  client.get('/review/jobs', { params: projectId ? { project_id: projectId } : {} });
+export const getReviewJobs = (projectId, limit = 2000) =>
+  client.get('/review/jobs', { params: { ...(projectId ? { project_id: projectId } : {}), limit } });
 
 export const patchReviewPages = (jobId, assignments) =>
   client.patch(`/review/jobs/${jobId}/pages`, { assignments });
 
 export const confirmReview = (jobId) => client.post(`/review/jobs/${jobId}/confirm`);
+
+export const batchConfirmCorrect = (jobIds) =>
+  client.post('/review/jobs/batch/confirm-correct', { job_ids: jobIds });
+
+export const clearPageErrors = (jobId, pageNumbers) =>
+  client.post(`/review/jobs/${jobId}/pages/clear-errors`, { page_numbers: pageNumbers });
 
 export const deleteBatch = (batchId) => client.delete(`/jobs/batch/${batchId}`);

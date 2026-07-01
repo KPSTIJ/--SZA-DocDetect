@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Modal, Button, Space, Select, Tooltip, Divider, App, Collapse } from 'antd';
+import { Modal, Button, Space, Select, Tooltip, Divider, App, Collapse, Checkbox } from 'antd';
 import {
   ExclamationCircleOutlined, CheckCircleOutlined,
   EyeOutlined, LeftOutlined, RightOutlined, DownloadOutlined, DownOutlined,
@@ -27,7 +27,12 @@ const groupPagesByType = (pages) => {
   let current = null;
   for (const p of pages) {
     if (current && current.typeId === p.document_type_id) {
-      current.pages.push(p);
+      if (p.is_title_page && current.pages.length > 0) {
+        segments.push(current);
+        current = { typeId: p.document_type_id, typeName: p.document_type_name || 'Не распознан', pages: [p] };
+      } else {
+        current.pages.push(p);
+      }
     } else {
       if (current) segments.push(current);
       current = { typeId: p.document_type_id, typeName: p.document_type_name || 'Не распознан', pages: [p] };
@@ -44,7 +49,7 @@ const groupPagesByType = (pages) => {
   return segments;
 };
 
-const DossierModal = ({ open, job, onClose }) => {
+const DossierModal = ({ open, job, onClose, jobs = [], onNavigate }) => {
   const { selectedPages, togglePageSelection, patchPages, confirmJob, clearSelection, openPdfViewer } = useJobStore();
   const [apiModal, apiModalCtx] = Modal.useModal();
   const [documentTypes, setDocumentTypes] = useState([]);
@@ -55,17 +60,73 @@ const DossierModal = ({ open, job, onClose }) => {
 
   const [previewModal, setPreviewModal] = useState({ open: false, pageNum: null });
   const [previewType, setPreviewType] = useState(null);
+  const pagesCache = useRef({});
+  const cacheOrder = useRef([]);
 
-  const loadPages = useCallback(() => {
+  const currentIndex = jobs.findIndex(j => j.job_id === job?.job_id);
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < jobs.length - 1;
+
+  const goPrev = () => { if (hasPrev && onNavigate) onNavigate(jobs[currentIndex - 1]); };
+  const goNext = () => { if (hasNext && onNavigate) onNavigate(jobs[currentIndex + 1]); };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (e.key === 'ArrowLeft' && !previewModal.open) {
+        e.preventDefault();
+        const idx = jobs.findIndex(j => j.job_id === job?.job_id);
+        if (idx > 0 && onNavigate) onNavigate(jobs[idx - 1]);
+      }
+      if (e.key === 'ArrowRight' && !previewModal.open) {
+        e.preventDefault();
+        const idx = jobs.findIndex(j => j.job_id === job?.job_id);
+        if (idx < jobs.length - 1 && onNavigate) onNavigate(jobs[idx + 1]);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, jobs, job, onNavigate, previewModal.open]);
+
+
+
+  const setCache = (jid, data) => {
+    pagesCache.current[jid] = data;
+    cacheOrder.current = cacheOrder.current.filter(id => id !== jid);
+    cacheOrder.current.push(jid);
+    if (cacheOrder.current.length > 10) {
+      const oldest = cacheOrder.current.shift();
+      delete pagesCache.current[oldest];
+    }
+  };
+
+  const loadPages = useCallback((forceRefresh = false) => {
     if (!open || !job) return;
+    const jid = job.job_id;
+    if (!forceRefresh && pagesCache.current[jid]) {
+      setPages(pagesCache.current[jid]);
+      return;
+    }
     setLoading(true);
     import('../../api/jobsApi').then(({ getJobPages }) =>
-      getJobPages(job.job_id).then(res => {
+      getJobPages(jid).then(res => {
+        setCache(jid, res.data);
         setPages(res.data);
         setLoading(false);
       }).catch(() => setLoading(false))
     );
-  }, [open, job]);
+    const idx = jobs.findIndex(j => j.job_id === jid);
+    [idx - 1, idx + 1].forEach(i => {
+      if (i >= 0 && i < jobs.length) {
+        const nextId = jobs[i].job_id;
+        if (!pagesCache.current[nextId]) {
+          import('../../api/jobsApi').then(({ getJobPages }) =>
+            getJobPages(nextId).then(res => setCache(nextId, res.data)).catch(() => {})
+          );
+        }
+      }
+    });
+  }, [open, job, jobs]);
 
   useEffect(() => {
     if (open && job) {
@@ -86,6 +147,8 @@ const DossierModal = ({ open, job, onClose }) => {
   const errorGroups = groupPagesByType(errorPages);
   const okGroups = groupPagesByType(okPages);
   const selectedSet = selectedPages[jid] || new Set();
+  const selectedPagesData = pages.filter(p => selectedSet.has(p.page_number));
+  const allPagesCorrect = pages.length > 0 && pages.every(p => p.error_code == null && p.document_type_id != null);
 
   const previewIndex = previewModal.pageNum != null ? pages.findIndex(p => p.page_number === previewModal.pageNum) : -1;
   const previewPage = pages[previewIndex];
@@ -106,8 +169,8 @@ const DossierModal = ({ open, job, onClose }) => {
   useEffect(() => {
     if (!previewModal.open) return;
     const handler = (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') previewNavRef.current(-1);
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') previewNavRef.current(1);
+      if (e.key === 'ArrowUp') { e.preventDefault(); previewNavRef.current(-1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); previewNavRef.current(1); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -136,15 +199,35 @@ const DossierModal = ({ open, job, onClose }) => {
     if (!jid || batchType == null) return;
     const docTypeId = batchType === '__undetected__' ? null : batchType;
     const assignments = Array.from(selectedSet).map(pn => ({ page_number: pn, document_type_id: docTypeId }));
+    delete pagesCache.current[jid];
     await patchPages(jid, assignments);
     clearSelection(jid);
     setBatchType(null);
-    loadPages();
+    loadPages(true);
   };
 
   const handleBatchCancel = () => {
     clearSelection(jid);
     setBatchType(null);
+  };
+
+  const handleSelectGroup = (group, checked) => {
+    useJobStore.setState(state => {
+      const current = new Set(state.selectedPages[jid] || []);
+      group.pages.forEach(p => {
+        if (checked) current.add(p.page_number);
+        else current.delete(p.page_number);
+      });
+      return { selectedPages: { ...state.selectedPages, [jid]: current } };
+    });
+  };
+
+  const isGroupFullySelected = (group) => {
+    return group.pages.length > 0 && group.pages.every(p => selectedSet.has(p.page_number));
+  };
+
+  const isGroupPartiallySelected = (group) => {
+    return group.pages.some(p => selectedSet.has(p.page_number)) && !isGroupFullySelected(group);
   };
 
   const handleConfirm = () => {
@@ -154,9 +237,7 @@ const DossierModal = ({ open, job, onClose }) => {
       okText: 'Подтвердить',
       onOk: async () => {
         await confirmJob(jid);
-        import('../../api/jobsApi').then(({ getJobDetail }) =>
-          getJobDetail(jid).then(res => setOutputDocs(res.data?.output_documents || []))
-        );
+        onClose();
       },
     });
   };
@@ -165,6 +246,22 @@ const DossierModal = ({ open, job, onClose }) => {
     <>
       <Modal
         title={<div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+          <Button size="small" disabled={!hasPrev} onClick={goPrev}
+            style={{
+              borderRadius: 4, padding: '0 8px', fontSize: 14, lineHeight: '24px', fontWeight: 700,
+              border: '1px solid var(--border)', background: hasPrev ? 'var(--bg-elevated)' : 'transparent',
+              color: hasPrev ? 'var(--text)' : '#555', opacity: hasPrev ? 1 : 0.35,
+            }}>
+            <LeftOutlined />
+          </Button>
+          <Button size="small" disabled={!hasNext} onClick={goNext}
+            style={{
+              borderRadius: 4, padding: '0 8px', fontSize: 14, lineHeight: '24px', fontWeight: 700,
+              border: '1px solid var(--border)', background: hasNext ? 'var(--bg-elevated)' : 'transparent',
+              color: hasNext ? 'var(--text)' : '#555', opacity: hasNext ? 1 : 0.35,
+            }}>
+            <RightOutlined />
+          </Button>
           <span style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600 }}>{job?.source_filename || ''}</span>
           <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#fff', background: color.header, whiteSpace: 'nowrap' }}>
             {pages.length} стр · {color.label}
@@ -172,24 +269,22 @@ const DossierModal = ({ open, job, onClose }) => {
           <Tooltip title="Открыть исходный PDF">
             <Button size="small" icon={<EyeOutlined />}
               onClick={() => { if (jid) openPdfViewer(jid, job?.source_filename); }}
-              style={{ color: 'var(--accent)', fontSize: 13, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '2px 12px', background: 'var(--accent-bg)' }}>
-              Открыть исходный PDF
-            </Button>
+              style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-elevated)', fontSize: 13, padding: '2px 8px' }} />
           </Tooltip>
+          <div style={{ flex: 1 }} />
+          <Button size="small" type="primary" onClick={handleConfirm}
+            disabled={!allPagesCorrect}
+            style={{ borderRadius: 6, fontSize: 13, marginRight: 28, border: '1.5px solid var(--accent-border)' }}>
+            Подтвердить разрезание
+          </Button>
         </div>}
-        extra={
-          job?.status !== 'done' && (
-            <Button size="small" type="primary" onClick={handleConfirm}
-              style={{ borderRadius: 6, fontSize: 13 }}>
-              Подтвердить
-            </Button>
-          )
-        }
+        closeIcon={<span style={{ fontSize: 16, color: 'var(--text-tertiary)', cursor: 'pointer', userSelect: 'none' }}>✕</span>}
         open={open}
         onCancel={onClose}
         footer={null}
         width={1400}
         styles={{ body: { padding: 0 } }}
+        className="dossier-modal"
       >
         <div style={{ padding: '20px 24px', maxHeight: 'calc(80vh - 130px)', overflowY: 'auto' }}>
           {loading ? (
@@ -206,9 +301,17 @@ const DossierModal = ({ open, job, onClose }) => {
                       {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
                       <div style={{ marginBottom: gi === errorGroups.length - 1 ? 0 : 20 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: '#d13a3a', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {group.typeId != null && <span style={{ fontSize: 13, fontWeight: 700, color: '#d13a3a' }}>№{group.occurrence}</span>}
-                          <span>{group.typeName}</span>
-                          <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
+                          <Checkbox
+                            checked={isGroupFullySelected(group)}
+                            indeterminate={isGroupPartiallySelected(group)}
+                            onChange={e => handleSelectGroup(group, e.target.checked)}
+                            style={{ marginRight: 4 }}
+                          />
+                          <span style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleSelectGroup(group, !isGroupFullySelected(group))}>
+                            {group.typeId != null && <span style={{ fontSize: 13, fontWeight: 700, color: '#d13a3a' }}>№{group.occurrence}</span>}
+                            <span>{group.typeName}</span>
+                            <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
+                          </span>
                         </div>
                         <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
                           {group.pages.map((page) => (
@@ -239,9 +342,17 @@ const DossierModal = ({ open, job, onClose }) => {
                       {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '16px 10px' }} />}
                       <div style={{ marginBottom: gi === okGroups.length - 1 ? 0 : 20 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>№{group.occurrence}</span>
-                          <span>{group.typeName}</span>
-                          <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
+                          <Checkbox
+                            checked={isGroupFullySelected(group)}
+                            indeterminate={isGroupPartiallySelected(group)}
+                            onChange={e => handleSelectGroup(group, e.target.checked)}
+                            style={{ marginRight: 4 }}
+                          />
+                          <span style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleSelectGroup(group, !isGroupFullySelected(group))}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>№{group.occurrence}</span>
+                            <span>{group.typeName}</span>
+                            <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 4 }}>· {group.pages.length} стр.</span>
+                          </span>
                         </div>
                         <div style={{ display: 'flex', gap: 20, overflowX: 'auto', padding: '8px 10px 12px', minHeight: 226 }}>
                           {group.pages.map((page) => (
@@ -285,8 +396,7 @@ const DossierModal = ({ open, job, onClose }) => {
                         <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
-                              {doc.document_type_name || doc.document_type_id}
-                              {doc.occurrence_index > 1 ? ` №${doc.occurrence_index}` : ''}
+                              №{doc.occurrence_index} / {doc.document_type_name || doc.document_type_id}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
                               Стр. {doc.start_page + 1}–{doc.end_page + 1} · {doc.page_count} стр.
@@ -316,6 +426,7 @@ const DossierModal = ({ open, job, onClose }) => {
         .batch-select .ant-select-selector { background: var(--bg-elevated) !important; border-color: var(--border) !important; }
         .batch-select .ant-select-selection-placeholder,
         .batch-select .ant-select-selection-item { color: var(--text) !important; }
+        .dossier-modal .ant-modal-close { top: 16px; }
       `}</style>
       {selectedSet.size > 0 && (
         <div style={{
@@ -350,6 +461,25 @@ const DossierModal = ({ open, job, onClose }) => {
             </Button>
             <Button onClick={handleBatchCancel} style={{ borderRadius: 6 }}>Отмена</Button>
           </Space>
+          <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
+          <Button
+            type="primary"
+            onClick={async () => {
+              const pageNumbers = Array.from(selectedSet);
+              delete pagesCache.current[jid];
+              await import('../../api/jobsApi').then(({ clearPageErrors }) => clearPageErrors(jid, pageNumbers));
+              clearSelection(jid);
+              loadPages(true);
+            }}
+            disabled={!selectedPagesData.every(p => p.document_type_id != null)}
+            style={{
+              borderRadius: 6,
+              background: selectedPagesData.every(p => p.document_type_id != null) ? '#2ea86b' : undefined,
+              borderColor: selectedPagesData.every(p => p.document_type_id != null) ? '#2ea86b' : undefined,
+            }}
+          >
+            Подтвердить корректность
+          </Button>
         </div>
       )}
 

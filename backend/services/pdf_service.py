@@ -86,6 +86,4 @@ def split_pdf(source_path: str, output_path: str, start_page: int, end_page: int
 
 def build_output_filename(source_name: str, doc_type: str, occurrence: int = 1) -> str:
     stem = Path(source_name).stem
-    if occurrence > 1:
-        return f"{stem}_{doc_type}_{occurrence}.pdf"
-    return f"{stem}_{doc_type}.pdf"
+    return f"{stem}_{doc_type}_{occurrence}.pdf"

@@ -105,6 +105,7 @@ class JobSummary(BaseModel):
     error_pages: int | None = None
     ok_documents: int | None = None
     total_documents: int | None = None
+    detection_methods: list[str] = []
     created_at: datetime
     finished_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)

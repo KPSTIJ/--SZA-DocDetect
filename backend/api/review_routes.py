@@ -19,7 +19,7 @@ router = APIRouter(prefix="/review", tags=["review"])
 @router.get("/jobs", response_model=ReviewJobsResponse)
 async def list_review_jobs(
     project_id: UUID | None = Query(None),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(2000, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
@@ -41,6 +41,7 @@ async def list_review_jobs(
         total_error += sum(1 for p in pages if p.error_code is not None)
         output_docs = job.output_documents or []
         ok_documents = sum(1 for d in output_docs if d.status == "ok")
+        methods = sorted(set(p.detection_method for p in pages if p.detection_method))
         js = JobSummary(
             job_id=str(job.id),
             project_id=job.project_id,
@@ -52,6 +53,7 @@ async def list_review_jobs(
             error_pages=sum(1 for p in pages if p.error_code is not None),
             ok_documents=ok_documents,
             total_documents=len(output_docs),
+            detection_methods=methods,
             created_at=job.created_at,
             finished_at=job.finished_at,
         )
@@ -103,6 +105,23 @@ async def patch_job_pages(job_id: str, data: ReviewPatchRequest, db: AsyncSessio
     return {"status": "ok"}
 
 
+@router.post("/jobs/{job_id}/pages/clear-errors", status_code=200)
+async def clear_page_errors(job_id: str, data: dict, db: AsyncSession = Depends(get_db)):
+    page_numbers = data.get("page_numbers", [])
+    for pn in page_numbers:
+        result = await db.execute(
+            select(PageResult).where(
+                PageResult.job_id == parse_job_id(job_id),
+                PageResult.page_number == pn,
+            )
+        )
+        page = result.scalar_one_or_none()
+        if page:
+            page.error_code = None
+    await db.commit()
+    return {"cleared": len(page_numbers)}
+
+
 @router.post("/jobs/{job_id}/confirm", response_model=ReviewConfirmResponse)
 async def confirm_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     job = await db.get(ProcessingJob, parse_job_id(job_id))
@@ -143,3 +162,38 @@ async def confirm_job(job_id: str, request: Request, db: AsyncSession = Depends(
         output_documents=result_docs,
         status=job.status,
     )
+
+
+@router.post("/jobs/batch/confirm-correct", status_code=200)
+async def batch_confirm_correct(data: dict, request: Request, db: AsyncSession = Depends(get_db)):
+    from uuid import UUID as _UUID
+    from backend.core.orchestrator import DocumentOrchestrator
+    from datetime import datetime, timezone
+    settings = request.app.state.settings
+    job_ids = data.get("job_ids", [])
+    confirmed = 0
+    for raw_id in job_ids:
+        try:
+            jid = _UUID(raw_id) if isinstance(raw_id, str) else raw_id
+        except ValueError:
+            continue
+        job = await db.get(ProcessingJob, jid)
+        if not job:
+            continue
+        result = await db.execute(
+            select(PageResult).where(PageResult.job_id == jid)
+        )
+        for page in result.scalars().all():
+            page.error_code = None
+        await db.commit()
+        orch = DocumentOrchestrator(db, settings)
+        try:
+            await orch.assemble_after_review(job.id)
+        except Exception as e:
+            logger = __import__('logging').getLogger(__name__)
+            logger.error("Batch confirm — assemble failed for %s: %s", jid, e)
+        job.status = JobStatus.done
+        job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        await db.commit()
+        confirmed += 1
+    return {"confirmed": confirmed}

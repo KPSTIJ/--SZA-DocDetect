@@ -4,7 +4,7 @@ from pathlib import Path
 
 def test_build_output_filename_single():
     result = build_output_filename("dossier.pdf", "passport", occurrence=1)
-    assert result == "dossier_passport.pdf"
+    assert result == "dossier_passport_1.pdf"
 
 
 def test_build_output_filename_multiple():
@@ -14,4 +14,4 @@ def test_build_output_filename_multiple():
 
 def test_build_output_filename_stem():
     result = build_output_filename("my.file.name.pdf", "contract", occurrence=1)
-    assert result == "my.file.name_contract.pdf"
+    assert result == "my.file.name_contract_1.pdf"

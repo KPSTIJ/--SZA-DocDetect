@@ -1956,3 +1956,17 @@ VITE_API_BASE_URL=/api
 | 39 | **DevConsole** | `DevConsole.jsx`, `log_routes.py` | Правая панель 500px, чтение логов из файла |
 | 40 | **Чейнинг с проверкой `pending`** | `orchestrator.py` | Следующий job запускается только если `status == 'pending'` |
 | 41 | **Нормализация кавычек** | `text_layer.py` | `_normalize_quotes()` — приведение всех видов кавычек к стандарту |
+| 42 | **Разбивка по is_title_page** | `orchestrator.py` | Сегменты одного типа разделяются по `is_title_page` |
+| 43 | **Detection methods API** | `schemas.py`, `review_routes.py` | `detection_methods` в JobSummary, фильтр по методу |
+| 44 | **Постраничный вывод (52/стр)** | `ReviewPage.jsx` | Пагинация, сортировка по дате создания/завершения |
+| 45 | **Навигация по досье** | `DossierModal.jsx` | Стрелки + клавиши ←/→, кеш страниц (10 шт), префетч |
+| 46 | **Массовое подтверждение** | `review_routes.py`, `ReviewPage.jsx` | `POST /review/jobs/batch/confirm-correct`, чекбоксы на карточках |
+| 47 | **Подтвердить разрезание** | `DossierModal.jsx` | Кнопка в шапке, disabled пока есть ошибки |
+| 48 | **SMB overwrite** | `smb_service.py` | `FILE_OVERWRITE_IF` вместо `FILE_CREATE` |
+| 49 | **SMB delete** | `smb_service.py` | `FILE_DELETE_ON_CLOSE` в create_options, рекурсивное удаление |
+| 50 | **Локальное + SMB сохранение** | `orchestrator.py` | `_save_final_output` сохраняет и локально, и на SMB |
+| 51 | **DELETE cleanup** | `job_routes.py` | `selectinload` + `shutil.rmtree` + SMB delete при удалении batch |
+| 52 | **Confirm после assemble_after_review** | `orchestrator.py` | `doc_types_dict` передаётся для корректного сплита |
+| 53 | **Confirm без ошибок** | `orchestrator.py` | Ассемблер запускается только при `status == 'done'` |
+| 54 | **Clear-errors endpoint** | `review_routes.py` | `POST /review/jobs/{id}/pages/clear-errors` |
+| 55 | **Чекбокс группы типов** | `DossierModal.jsx` | Выбор всех страниц типа документа, `indeterminate` состояние |

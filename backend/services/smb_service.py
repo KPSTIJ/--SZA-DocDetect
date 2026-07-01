@@ -122,6 +122,86 @@ def create_folder(settings, rel_path: str, name: str) -> dict:
         _disconnect(conn, session, tree)
 
 
+def _list_dir_all(tree, imp, dir_path: str) -> list[dict]:
+    from smbprotocol.open import (
+        Open, FilePipePrinterAccessMask, FileAttributes,
+        CreateDisposition, ShareAccess, FileInformationClass,
+    )
+    entries = []
+    try:
+        d = Open(tree, dir_path)
+        d.create(imp, FilePipePrinterAccessMask.GENERIC_READ, FileAttributes.FILE_ATTRIBUTE_DIRECTORY,
+                 ShareAccess.FILE_SHARE_READ, CreateDisposition.FILE_OPEN, 0)
+    except Exception:
+        return entries
+    try:
+        files = d.query_directory("*", FileInformationClass.FILE_DIRECTORY_INFORMATION)
+        for f in files:
+            try:
+                name_field = f['file_name']
+                raw = name_field.get_value() if hasattr(name_field, 'get_value') else bytes(name_field)
+                name = raw.decode('utf-16-le').rstrip('\x00')
+            except Exception:
+                continue
+            if name and name not in ('.', '..'):
+                is_dir = False
+                try:
+                    attrs = f.get('file_attributes')
+                    if attrs:
+                        attr_val = attrs.get_value() if hasattr(attrs, 'get_value') else int(attrs)
+                        is_dir = bool(attr_val & FileAttributes.FILE_ATTRIBUTE_DIRECTORY)
+                except Exception:
+                    pass
+                entries.append({"name": name, "type": "folder" if is_dir else "file"})
+    except Exception:
+        pass
+    finally:
+        d.close()
+    entries.sort(key=lambda x: (x["type"] != "folder", x["name"].lower()))
+    return entries
+
+
+def _delete_dir_recursive(tree, imp, dir_path: str) -> None:
+    from smbprotocol.open import (
+        Open, FilePipePrinterAccessMask, FileAttributes,
+        CreateDisposition, ShareAccess, FileInformationClass,
+    )
+    FILE_DELETE_ON_CLOSE = 0x00001000
+    entries = _list_dir_all(tree, imp, dir_path)
+    for entry in entries:
+        child = f"{dir_path}/{entry['name']}"
+        if entry['type'] == 'folder':
+            _delete_dir_recursive(tree, imp, child)
+        else:
+            try:
+                f = Open(tree, child)
+                f.create(imp, FilePipePrinterAccessMask.DELETE, FileAttributes.FILE_ATTRIBUTE_NORMAL,
+                         ShareAccess.FILE_SHARE_DELETE, CreateDisposition.FILE_OPEN,
+                         FILE_DELETE_ON_CLOSE)
+                f.close()
+            except Exception as e:
+                logger.warning("Failed to delete SMB file %s: %s", child, e)
+    try:
+        d = Open(tree, dir_path)
+        d.create(imp, FilePipePrinterAccessMask.DELETE, FileAttributes.FILE_ATTRIBUTE_DIRECTORY,
+                 ShareAccess.FILE_SHARE_DELETE, CreateDisposition.FILE_OPEN,
+                 FILE_DELETE_ON_CLOSE)
+        d.close()
+    except Exception as e:
+        logger.warning("Failed to delete SMB dir %s: %s", dir_path, e)
+
+
+def delete_path(settings, rel_path: str) -> None:
+    conn, session, tree, imp = _connect(settings)
+    try:
+        normalized = _validate_path(rel_path)
+        target = f"{settings.SMB_ROOT}/{normalized}" if normalized else settings.SMB_ROOT
+        _delete_dir_recursive(tree, imp, target)
+        logger.info("Deleted SMB path: %s", target)
+    finally:
+        _disconnect(conn, session, tree)
+
+
 def save_file(settings, rel_path: str, filename: str, content: bytes) -> None:
     from smbprotocol.open import (
         Open, FilePipePrinterAccessMask, FileAttributes,
@@ -135,7 +215,7 @@ def save_file(settings, rel_path: str, filename: str, content: bytes) -> None:
         file_path = f"{target_dir}/{filename}"
         f = Open(tree, file_path)
         f.create(imp, FilePipePrinterAccessMask.GENERIC_WRITE, FileAttributes.FILE_ATTRIBUTE_NORMAL,
-                 ShareAccess.FILE_SHARE_WRITE, CreateDisposition.FILE_CREATE, 0)
+                 ShareAccess.FILE_SHARE_WRITE, CreateDisposition.FILE_OVERWRITE_IF, 0)
         f.write(content)
         f.close()
         logger.info("Saved file to SMB: %s", file_path)

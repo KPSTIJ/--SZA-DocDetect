@@ -29,8 +29,13 @@ const useJobStore = create((set, get) => ({
     const batchId = crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Date.now().toString().slice(-12).padStart(12, '0');
     set({ loading: true });
     try {
-      for (const file of files) {
-        await jobsApi.uploadPdf(file, projectId, batchId);
+      const chunkSize = 50;
+      for (let i = 0; i < files.length; i += chunkSize) {
+        const chunk = files.slice(i, i + chunkSize);
+        await Promise.all(chunk.map(file => jobsApi.uploadPdf(file, projectId, batchId)));
+        if (i + chunkSize < files.length) {
+          await new Promise(r => setTimeout(r, 100));
+        }
       }
     } finally {
       set({ loading: false });
@@ -60,7 +65,7 @@ const useJobStore = create((set, get) => ({
 
   fetchJobs: async () => {
     const projectId = useProjectStore.getState().selectedProjectId;
-    const params = { limit: 100 };
+    const params = { limit: 2000 };
     if (projectId) params.project_id = projectId;
     const res = await jobsApi.getJobs(params);
     const next = res.data.items;
@@ -129,6 +134,12 @@ const useJobStore = create((set, get) => ({
 
   confirmJob: async (jobId) => {
     await jobsApi.confirmReview(jobId);
+    await get().fetchReviewJobs();
+  },
+
+  batchConfirmCorrect: async (jobIds) => {
+    await jobsApi.batchConfirmCorrect(jobIds);
+    await get().fetchJobs();
     await get().fetchReviewJobs();
   },
 

@@ -4,7 +4,7 @@ import { Button, Select, Space } from 'antd';
 import useJobStore from '../../store/jobStore';
 import useConfigStore from '../../store/configStore';
 
-const FloatingAssignToolbar = ({ jobId }) => {
+const FloatingAssignToolbar = ({ jobId, pages = [] }) => {
   const selectedPages = useJobStore((s) => s.selectedPages[jobId] || new Set());
   const patchPages = useJobStore((s) => s.patchPages);
   const clearSelection = useJobStore((s) => s.clearSelection);
@@ -13,11 +13,20 @@ const FloatingAssignToolbar = ({ jobId }) => {
 
   if (selectedPages.size === 0) return null;
 
+  const selectedPagesData = pages.filter(p => selectedPages.has(p.page_number));
+  const allHaveType = selectedPagesData.every(p => p.document_type_id != null);
+
   const handleApply = async () => {
     const docTypeId = selectedType === '__undetected__' ? null : selectedType;
     const assignments = Array.from(selectedPages).map((pageNum) => ({ page_number: pageNum, document_type_id: docTypeId }));
     await patchPages(jobId, assignments);
     setSelectedType(null);
+  };
+
+  const handleConfirmCorrect = async () => {
+    const pageNumbers = Array.from(selectedPages);
+    await import('../../api/jobsApi').then(({ clearPageErrors }) => clearPageErrors(jobId, pageNumbers));
+    clearSelection(jobId);
   };
 
   const handleCancel = () => { clearSelection(jobId); setSelectedType(null); };
@@ -66,6 +75,19 @@ const FloatingAssignToolbar = ({ jobId }) => {
             Отмена
           </Button>
         </Space>
+        <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
+        <Button
+          type="primary"
+          onClick={handleConfirmCorrect}
+          disabled={!allHaveType}
+          style={{
+            borderRadius: 6, height: 36, padding: '4px 20px',
+            background: allHaveType ? '#2ea86b' : undefined,
+            borderColor: allHaveType ? '#2ea86b' : undefined,
+          }}
+        >
+          Подтвердить корректность
+        </Button>
       </div>
     </div>,
     document.body,

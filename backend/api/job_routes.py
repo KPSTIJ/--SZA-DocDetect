@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, get_sessionmaker
-from backend.models.db_models import ProcessingJob, PageResult, OutputDocument, DocumentType
+from backend.models.db_models import ProcessingJob, PageResult, OutputDocument, DocumentType, Project
 from backend.models.schemas import (
     JobUploadResponse, JobListResponse, JobSummary, JobDetailResponse,
     PageResultResponse, OutputDocumentResponse, JobStatus
@@ -111,7 +111,7 @@ async def start_batch(background_tasks: BackgroundTasks, request: Request, proje
 async def list_jobs(
     project_id: UUID | None = FastQuery(None),
     status: str | None = None,
-    limit: int = 50,
+    limit: int = 2000,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
@@ -259,6 +259,38 @@ async def stream_output_pdf(job_id: str, doc_id: int, db: AsyncSession = Depends
     return FileResponse(doc.output_path, media_type="application/pdf")
 
 
+def _cleanup_output_dirs(job, settings, project=None):
+    import shutil, os
+    from pathlib import Path
+    output_base = os.path.join(settings.OUTPUT_DIR, str(job.id))
+    cleaned = set()
+    for doc in (job.output_documents or []):
+        if doc.output_path:
+            p = os.path.abspath(doc.output_path)
+            parent = os.path.dirname(p)
+            if parent in cleaned or parent == os.path.abspath(output_base) or parent == os.path.abspath(settings.OUTPUT_DIR):
+                continue
+            try:
+                if os.path.exists(parent):
+                    shutil.rmtree(parent, ignore_errors=True)
+                cleaned.add(parent)
+            except Exception:
+                pass
+    if project and project.final_output_dir:
+        stem = Path(job.source_filename).stem
+        local_dir = os.path.abspath(os.path.join(project.final_output_dir, stem))
+        if local_dir not in cleaned and os.path.exists(local_dir):
+            shutil.rmtree(local_dir, ignore_errors=True)
+        if settings.SMB_USERNAME and settings.SMB_PASSWORD:
+            try:
+                from backend.services import smb_service
+                smb_dir = f"{project.final_output_dir}/{stem}".strip("/") if project.final_output_dir else stem
+                smb_service.delete_path(settings, smb_dir)
+            except Exception as e:
+                logger = __import__('logging').getLogger(__name__)
+                logger.warning("Failed to delete SMB dir for job %s: %s", job.id, e)
+
+
 @router.delete("/batch/{batch_id}", status_code=204)
 async def delete_batch(batch_id: str, db: AsyncSession = Depends(get_db)):
     import shutil, os
@@ -268,15 +300,18 @@ async def delete_batch(batch_id: str, db: AsyncSession = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid batch_id")
     result = await db.execute(
-        select(ProcessingJob).where(ProcessingJob.batch_id == bid)
+        select(ProcessingJob).options(selectinload(ProcessingJob.output_documents)).where(ProcessingJob.batch_id == bid)
     )
     jobs = result.scalars().all()
     if not jobs:
         raise HTTPException(status_code=404, detail="Batch not found")
+    settings = Settings()
     for job in jobs:
+        project = await db.get(Project, job.project_id) if job.project_id else None
+        _cleanup_output_dirs(job, settings, project)
         if job.source_path and os.path.exists(job.source_path):
             shutil.rmtree(os.path.dirname(job.source_path), ignore_errors=True)
-        output_base = os.path.join(Settings().OUTPUT_DIR, str(job.id))
+        output_base = os.path.join(settings.OUTPUT_DIR, str(job.id))
         if os.path.exists(output_base):
             shutil.rmtree(output_base, ignore_errors=True)
         await db.delete(job)
@@ -289,6 +324,10 @@ async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     import shutil, os
+    # Eagerly load output_documents for cleanup
+    await db.refresh(job, ['output_documents'])
+    project = await db.get(Project, job.project_id) if job.project_id else None
+    _cleanup_output_dirs(job, Settings(), project)
     if job.source_path and os.path.exists(job.source_path):
         shutil.rmtree(os.path.dirname(job.source_path), ignore_errors=True)
     output_base = os.path.join(Settings().OUTPUT_DIR, str(job.id))

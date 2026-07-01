@@ -228,12 +228,6 @@ class DocumentOrchestrator:
         output_docs = self._assign_document_boundaries(final_assignments, doc_types_dict)
         await self._save_output_documents(job.id, output_docs)
 
-        ok_docs = [d for d in output_docs if d["status"] == "ok"]
-        if ok_docs:
-            job.processing_stage = "assembling"
-            await self.db.commit()
-        await self._assemble_pdfs(job, ok_docs)
-
         has_doc_problems = any(d["status"] != "ok" for d in output_docs)
 
         if not output_docs:
@@ -243,14 +237,21 @@ class DocumentOrchestrator:
             job.status = "needs_review"
         else:
             job.status = "done"
+
+        if job.status == "done":
+            ok_docs = [d for d in output_docs if d["status"] == "ok"]
+            if ok_docs:
+                job.processing_stage = "assembling"
+                await self.db.commit()
+            await self._assemble_pdfs(job, ok_docs)
+            try:
+                await self._save_final_output(job, ok_docs)
+            except Exception as e:
+                logger.error("Job %s — final output save failed: %s", job.id, str(e))
+
         job.processing_stage = None
         job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.db.commit()
-
-        try:
-            await self._save_final_output(job, ok_docs)
-        except Exception as e:
-            logger.error("Job %s — final output save failed: %s", job.id, str(e))
         logger.info("Job %s — finished, status=%s", job.id, job.status)
 
     async def _save_final_output(self, job: ProcessingJob, ok_docs: list[dict]) -> None:
@@ -261,8 +262,7 @@ class DocumentOrchestrator:
         stem = Path(job.source_filename).stem
         if self.settings.SMB_USERNAME and self.settings.SMB_PASSWORD:
             await self._save_to_smb(job, ok_docs, project.final_output_dir, stem)
-        else:
-            await self._save_to_local(job, ok_docs, project.final_output_dir, stem)
+        await self._save_to_local(job, ok_docs, project.final_output_dir, stem)
 
     async def _save_to_smb(self, job, ok_docs, rel_path: str, stem: str):
         from backend.services import smb_service
@@ -334,7 +334,7 @@ class DocumentOrchestrator:
         current_type = None
         current_segment = []
         for a in sorted(assignments, key=lambda x: x.page_number):
-            if a.doc_type_id != current_type:
+            if a.doc_type_id != current_type or (a.is_title_page and current_segment):
                 if current_segment:
                     segments.append(current_segment)
                 current_segment = [a]
@@ -431,7 +431,7 @@ class DocumentOrchestrator:
                 })
 
         for i, a in enumerate(page_assignments):
-            if a.doc_type_id != current_type:
+            if a.doc_type_id != current_type or (a.is_title_page and i > current_start):
                 if current_type is not None:
                     add_doc(current_start, i - 1)
                 current_type = a.doc_type_id
@@ -477,6 +477,8 @@ class DocumentOrchestrator:
         result = await self.db.execute(
             select(PageResult).where(PageResult.job_id == job_id).order_by(PageResult.page_number)
         )
+        dt_result = await self.db.execute(select(DocumentType))
+        doc_types_dict = {dt.id: dt for dt in dt_result.scalars().all()}
         pages = result.scalars().all()
         assignments = []
         for p in pages:
@@ -488,10 +490,13 @@ class DocumentOrchestrator:
                 detection_method=p.detection_method or "manual",
                 confidence=p.confidence or 1.0,
             ))
-        docs = self._assign_document_boundaries(assignments)
+        docs = self._assign_document_boundaries(assignments, doc_types_dict)
         await self._assemble_pdfs(job, docs)
         ok_docs = [d for d in docs if d["status"] == "ok"]
-        await self._save_final_output(job, ok_docs)
+        try:
+            await self._save_final_output(job, ok_docs)
+        except Exception as e:
+            logger.error("Job %s — final output save failed: %s", job.id, str(e))
         result = await self.db.execute(
             select(OutputDocument).where(OutputDocument.job_id == job_id)
         )
