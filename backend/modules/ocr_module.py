@@ -8,6 +8,12 @@ logger = logging.getLogger(__name__)
 
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
+try:
+    import paddle
+    _GPU_AVAILABLE = paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
+except Exception:
+    _GPU_AVAILABLE = False
+
 
 @dataclass
 class PatternMatch:
@@ -21,9 +27,19 @@ class OCRModule:
     def __init__(self):
         try:
             from paddleocr import PaddleOCR
-            logger.info("Initializing PaddleOCR with lang=ru")
-            self.ocr = PaddleOCR(use_angle_cls=True, lang='ru')
-            logger.info("PaddleOCR initialized successfully")
+
+            logger.info("Initializing PaddleOCR — lang=ru, GPU=%s", _GPU_AVAILABLE)
+
+            self.ocr = PaddleOCR(
+                use_textline_orientation=True,
+                lang="ru",
+                text_det_thresh=0.4,
+                text_det_box_thresh=0.6,
+                text_det_limit_side_len=1280,
+                text_recognition_batch_size=1,
+            )
+
+            logger.info("PaddleOCR initialized")
         except Exception as e:
             logger.warning("PaddleOCR not available: %s", e)
             self.ocr = None
@@ -39,15 +55,22 @@ class OCRModule:
         texts = []
         if result:
             for page in result:
-                if page:
+                if page is None:
+                    continue
+                if hasattr(page, 'rec_texts') and page.rec_texts:
+                    texts.extend(page.rec_texts)
+                elif isinstance(page, dict):
+                    for item in page.get('rec_texts', []):
+                        if item:
+                            texts.append(str(item))
+                elif isinstance(page, (list, tuple)):
                     for line in page:
                         if isinstance(line, (list, tuple)) and len(line) > 1:
                             text_data = line[1]
                             if isinstance(text_data, (list, tuple)):
-                                text = text_data[0]
+                                texts.append(str(text_data[0]))
                             else:
-                                text = str(text_data)
-                            texts.append(text)
+                                texts.append(str(text_data))
         combined = " ".join(texts)
         logger.debug("OCR extracted %d chars", len(combined))
         return combined

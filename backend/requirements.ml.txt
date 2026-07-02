@@ -1,5 +1,13 @@
 # ML dependencies — требуют Python <=3.11
-# Установка: pip install -r requirements.ml.txt
-paddleocr
+
+# CPU (для dev/тестов)
 paddlepaddle
+paddleocr
 doclayout-yolo
+
+# Для GPU (CUDA 12.x, RTX 5080):
+# 1. Удалить CPU-версию: pip uninstall paddlepaddle -y
+# 2. Установить GPU-версию:
+#    pip install paddlepaddle-gpu==3.0.0rc0 -f https://www.paddlepaddle.org.cn/whl/linux/cuda12/stable.html
+# 3. Остальные зависимости те же:
+#    pip install paddleocr doclayout-yolo
